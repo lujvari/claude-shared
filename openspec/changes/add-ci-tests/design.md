@@ -61,7 +61,7 @@ Workflow-level `permissions: contents: read`. No write scopes, no secrets, no re
 
 ### D9. Runner and caching
 
-`ubuntu-latest` for both jobs. No explicit GHA cache layer — lint tools run fast enough via pre-installed binaries or actions, and the Docker build relies on `docker/build-push-action`'s native `cache-from: type=gha` / `cache-to: type=gha,mode=max`.
+`ubuntu-latest` for both jobs. No explicit GHA cache layer — lint tools run fast enough via pre-installed binaries or actions, and the Docker build relies on `docker/build-push-action`'s native `cache-from: type=gha` / `cache-to: type=gha,mode=min`. `mode=min` (vs `max`) only caches layers needed for the final image, which is the right trade-off here: we build but never push, so caching every intermediate layer would inflate the cache for no replay benefit.
 
 ### D10. Action pinning
 

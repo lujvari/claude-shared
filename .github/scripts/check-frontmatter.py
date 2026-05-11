@@ -53,7 +53,8 @@ def check(path: Path, required: tuple[str, ...]) -> list[str]:
         errors.append(f"{path}: frontmatter is not a mapping")
         return errors
     for field in required:
-        if field not in data or data[field] in (None, ""):
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip():
             errors.append(f"{path}: missing required field '{field}'")
     return errors
 
