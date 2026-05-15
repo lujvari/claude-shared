@@ -91,8 +91,8 @@ Credentials are opt-in per run (see [Credential opt-in](#credential-opt-in) abov
 
 | Flag         | Source                                                      |
 |--------------|-------------------------------------------------------------|
-| `--gh`       | In-container `gh auth login` persists via `claude-code-root` volume (host macOS Keychain is not reachable), but is only visible when `--gh` is passed — otherwise `/root/.config/gh/` is masked by a tmpfs. Host `GH_TOKEN`/`GITHUB_TOKEN` env vars are forwarded when set. |
-| `--glab`     | Read-only bind-mount of `~/Library/Application Support/glab-cli` (macOS) or `~/.config/glab-cli` (Linux). Any in-container `glab auth login` state is likewise only visible under `--glab`; without the flag `/root/.config/glab-cli/` is masked by a tmpfs. Host `GITLAB_TOKEN` env var forwarded when set. |
+| `--gh`       | In-container `gh auth login` persists via `claude-code-root` volume (host macOS Keychain is not reachable), but is only visible when `--gh` is passed — otherwise `/root/.config/gh/` is masked by a tmpfs. Host `GH_TOKEN`/`GITHUB_TOKEN` env vars are forwarded when set; if neither is set, `run.sh` falls back to `gh auth token` on the host. The forwarded token is also auto-injected as a system-level git `insteadOf` rewrite for each authenticated GitHub host (enumerated from `~/.config/gh/hosts.yml`, default `github.com`) so in-container `git clone https://github.com/<priv>` works without extra setup. See [Private git module fetch](#private-git-module-fetch). |
+| `--glab`     | Read-only bind-mount of `~/Library/Application Support/glab-cli` (macOS) or `~/.config/glab-cli` (Linux). Any in-container `glab auth login` state is likewise only visible under `--glab`; without the flag `/root/.config/glab-cli/` is masked by a tmpfs. Host `GITLAB_TOKEN` env var forwarded when set; if not set, `run.sh` falls back to `glab auth token` on the host (mirrors the `--gh` fallback). The forwarded token is also auto-injected as a system-level git `insteadOf` rewrite for each authenticated GitLab host (enumerated from `~/.config/glab-cli/config.yml`, default `gitlab.com`) so in-container `git clone https://<your-gitlab>/<priv>` works without extra setup. See [Private git module fetch](#private-git-module-fetch). |
 | `--aws`      | Read-only bind-mount of `~/.aws/config` and `~/.aws/sso/` only. `~/.aws/credentials` (long-lived keys) and `~/.aws/cli/cache/` are **not** exposed. Host `AWS_PROFILE`/`AWS_REGION`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` forwarded when set. |
 | `--tfe`      | Read-only bind-mount of `~/.terraform.d/credentials.tfrc.json` when present (the file `terraform login` writes). Host `TF_TOKEN_app_terraform_io` forwarded when set. Any in-container `terraform login` state is likewise only visible under `--tfe` (or `--tofu`); without either flag `/root/.terraform.d/` is masked by a tmpfs. |
 | `--tofu`     | Read-only bind-mount of `~/.tofurc` (OpenTofu CLI config) when present, plus the shared TFC credentials file mount and env-var forwarding from `--tfe` (OpenTofu and Terraform share `~/.terraform.d/credentials.tfrc.json` and `TF_TOKEN_<host>`). The `/root/.terraform.d/` tmpfs mask is suppressed when *either* `--tfe` or `--tofu` is set — they grant equivalent visibility to the shared credentials file. `~/.tofurc` itself is not masked when the flag is off (CLI config, not credentials). |
@@ -135,12 +135,37 @@ Token alternative: instead of (or in addition to) the credentials file, export `
 
 OpenTofu reads its CLI configuration from `~/.tofurc` (distinct from terraform's `~/.terraformrc`). The `--tofu` flag mounts that file read-only if the host has one — useful when a project relies on a custom provider mirror, `plugin_cache_dir`, or `dev_overrides` block defined in `~/.tofurc`. The credentials file path is shared between the two ecosystems, so `--tfe` and `--tofu` compose freely: pass both when working in a mixed-IaC repo.
 
+### Private git module fetch
+
+`--gh` and `--glab` don't just authenticate the matching CLI tool — they also teach in-container `git` how to clone private HTTPS repos against the same hosts. At container startup, a small entrypoint script reads the forwarded `GH_TOKEN` / `GITLAB_TOKEN` and runs:
+
+```bash
+git config --system url."https://oauth2:$TOKEN@$HOST".insteadOf "https://$HOST"
+```
+
+for every host enumerated from your host's `~/.config/gh/hosts.yml` and `~/.config/glab-cli/config.yml` (or the canonical public host when enumeration is empty). After that, anything that shells out to git — `tofu init` / `terraform init` pulling private modules, `go get` against a private VCS, plain `git clone` — works without prompting.
+
+```bash
+claude-docker --glab ~/my-iac-repo
+# inside the container:
+tofu init                    # private GitLab module sources Just Work
+git clone https://sbp.gitlab.schubergphilis.com/<group>/<repo>.git
+```
+
+**Ephemerality.** The rewrite is written to `/etc/gitconfig`, which lives in the container's writable layer and is discarded on `docker run --rm` exit. The token never persists across container exits via the `claude-code-root` named volume (which only mounts `/root/`, not `/etc/`).
+
+**User overrides win.** Git precedence is `--local > --global > --system`. If you maintain a custom `~/.gitconfig` inside the container (persisted via `claude-code-root`) with your own `url.<host>.insteadOf` rules, they override the system-level default — your intent wins. Debug with `git config --show-origin --get-all url.<host>.insteadOf`.
+
+**HTTPS only.** The rewrite applies to `https://<host>/...` URLs. SSH remotes (`git@<host>:...`) are unchanged and would need separate SSH-agent / key forwarding (not built in — wider threat surface than HTTPS tokens).
+
+**Scope.** Today wired up for `--gh` and `--glab`. `--tfe` / `--tofu` don't get the treatment because terraform/tofu fetch modules over git (which `--gh`/`--glab` covers) rather than over the HCP Terraform API; their tokens are for `app.terraform.io`, not for code hosts. If you need a different forge (Bitbucket, Gitea, etc.), it would need its own credential flag.
+
 ## Threat model
 
 The container narrows blast radius vs. running `claude --yolo` on the host, but it is **not** a full sandbox:
 
 - **Protected:** host filesystem outside your passed workspaces, host `~/.aws/credentials` (long-lived keys), host AWS/glab config dirs are read-only from inside (container can't persist changes back).
-- **Exposed:** your passed workspaces are read-write; short-lived AWS SSO bearer tokens (`~/.aws/sso/cache`) and the glab config token are readable inside the container; `gh`/`GITLAB_TOKEN` env vars are readable; full outbound network.
+- **Exposed:** your passed workspaces are read-write; short-lived AWS SSO bearer tokens (`~/.aws/sso/cache`) and the glab config token are readable inside the container; `gh`/`GITLAB_TOKEN` env vars are readable; under `--gh`/`--glab` the matching token is also written to `/etc/gitconfig` as a `url.<host>.insteadOf` rewrite (same blast radius as the env var, different surface — see [Private git module fetch](#private-git-module-fetch)); full outbound network.
 - **Runtime code-fetch:** `npx`, `pnpm dlx`, `uvx`, `tfenv install`, and `tofuenv install` fetch and execute arbitrary code from public sources on first use — npm and PyPI for the package managers, `releases.hashicorp.com` for `tfenv install`, `github.com/opentofu/opentofu/releases` for `tofuenv install`. Under `--yolo`, a prompt-injected workspace can trigger these. `pnpm dlx` adds zero marginal blast radius vs the already-reachable `npx`; `uvx` is a *new* PyPI execution primitive (no Python runtime existed in the image before); `tfenv install` and `tofuenv install` are HashiCorp- and OpenTofu-release-channel execution primitives whose downloaded `terraform`/`tofu` binaries are intentionally **not** sha256-pinned in the image (versions are project-pinned via `.terraform-version`/`.opentofu-version`, so the image stays neutral on version policy). Build-time installs of the CLIs themselves are pinned by version + sha256 where the ecosystem supports it (uv binary, glab .deb, AWS CLI, tfenv source archive, tofuenv source archive), and by version only for npm-backed packages (claude-code, openspec, pnpm) — `--ignore-scripts` blocks lifecycle scripts at install time but does not protect against a compromised registry serving a malicious tarball at the pinned version. `~/.tofurc` mounted under `--tofu` is host CLI configuration, not credentials; it is read-only inside the container but a prior `--tofu` session can leave a `/root/.tofurc` from `claude-code-root` visible to a later no-flag session (residual config, not a credential leak — use `--ephemeral` for full isolation).
 - **Implication:** a prompt-injected file in any mounted workspace can exfiltrate those tokens and read/write any workspace. Don't mount repos you don't trust. Rotate tokens if the container is compromised.
 
