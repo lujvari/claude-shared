@@ -19,6 +19,22 @@ inject_insteadof() {
   hosts=$2
   [ -n "$tok" ] || return 0
   [ -n "$hosts" ] || return 0
+  # Reject tokens with embedded control chars (newlines, tabs, CR).
+  # Real PATs/OAuth tokens are single-line printable ASCII; control
+  # chars almost always mean the host-side source is broken — most
+  # commonly `export GITLAB_TOKEN="$(glab auth token 2>/dev/null)"`
+  # in ~/.bashrc, where `glab auth token` is an unknown subcommand
+  # on the user's glab version and prints help to stdout. Letting
+  # such a value through would fail with an opaque
+  # `git config error: invalid key (newline): url.https://oauth2:...`
+  # mid-startup; warn with a host hint so the user can locate the
+  # offending env var, then no-op this host group.
+  case $tok in
+    *[[:cntrl:]]*)
+      echo "claude-docker-entrypoint: token for hosts '$hosts' contains control characters; skipping git insteadOf injection. Check the env var that exported this token on the host." >&2
+      return 0
+      ;;
+  esac
   # POSIX field-splitting on comma; for-loop avoids the
   # `while read` pipeline subshell whose set -e semantics differ
   # across dash/bash. Save/restore IFS so we don't perturb callers.

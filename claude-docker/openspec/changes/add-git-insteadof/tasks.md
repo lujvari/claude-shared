@@ -2,6 +2,7 @@
 
 - [ ] 1.1 Create `claude-docker/entrypoint.sh` — POSIX `sh`, no bashisms; reads `GH_TOKEN` / `GITHUB_TOKEN` and `GITLAB_TOKEN`, plus `CLAUDE_DOCKER_GITHUB_HOSTS` / `CLAUDE_DOCKER_GITLAB_HOSTS` (defaults: `github.com` / `gitlab.com`); writes `git config --system url."https://oauth2:$TOKEN@$HOST.insteadOf" "https://$HOST"` for each authenticated host; then `exec "$@"`
 - [ ] 1.2 Add `set -eu` to the entrypoint; guard each token block with `[ -n "$TOK" ]` so missing-token paths are no-ops, not errors; ensure non-zero exit only when `exec "$@"` itself fails
+- [ ] 1.3 Reject tokens with embedded control chars (`*[[:cntrl:]]*`) before passing them to `git config --system`; print a host-scoped warning to stderr and no-op that host group, then continue startup. Failure mode caught: a broken host-side capture (e.g. `export GITLAB_TOKEN="$(glab auth token 2>/dev/null)"` on a glab version where `auth token` is an unknown subcommand and prints help to stdout) would otherwise produce an opaque `git config error: invalid key (newline)` mid-startup.
 
 ## 2. Dockerfile
 

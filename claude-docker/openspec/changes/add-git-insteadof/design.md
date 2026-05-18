@@ -219,6 +219,21 @@ don't include the public one.
   (small awk + git config invocations). Negligible vs the multi-second
   Claude Code startup.
 
+- **Risk:** A host-side capture that produces a malformed token (most
+  commonly `export GITLAB_TOKEN="$(glab auth token 2>/dev/null)"` in
+  `~/.bashrc` on a glab version where `auth token` is not a real
+  subcommand — glab prints help to stdout, which the `$(...)` captures
+  as a multi-line "token") forwards garbage as the token. Passing it
+  to `git config --system url.https://oauth2:$tok@...insteadOf` fails
+  with an opaque `error: invalid key (newline)` mid-startup, with no
+  indication of which env var is at fault.
+  → **Mitigation:** The entrypoint scans `$tok` for control chars
+  (`*[[:cntrl:]]*`) before injecting; on hit it prints a single-line
+  warning to stderr naming the affected host group and no-ops that
+  group, then continues startup. Real PATs / OAuth tokens are
+  single-line printable ASCII, so a legitimate token never trips
+  this guard.
+
 ## Migration Plan
 
 Purely additive. A user not setting `--gh`/`--glab` sees no change. A

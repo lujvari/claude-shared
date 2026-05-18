@@ -74,6 +74,13 @@ When `--gh` is set and a GitHub token reaches the container (via host env var `G
 - **THEN** the user's `--global` value wins (precedence rule), preserving their intent
 - **AND** the `--system` rule remains in place but inactive for that key
 
+#### Scenario: malformed token with embedded newlines is rejected with a clear warning
+
+- **GIVEN** the host exports `GITLAB_TOKEN` to a multi-line value (e.g. a broken `export GITLAB_TOKEN="$(glab auth token 2>/dev/null)"` in `~/.bashrc` where `glab auth token` is an unknown subcommand and the captured stdout is help text)
+- **WHEN** user runs `claude-docker --glab ~/repo`
+- **THEN** the entrypoint detects control characters in the token, prints a single-line warning to stderr identifying the affected host group, and skips the `git config --system url.<host>.insteadOf` injection for that group
+- **AND** the container starts normally; any other token group (e.g. a valid `GH_TOKEN` under `--gh`) is unaffected and gets its rewrite as usual
+
 #### Scenario: no opt-in flag means no insteadOf injection
 
 - **GIVEN** no host token is exported and no opt-in flag is passed
