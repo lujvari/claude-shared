@@ -52,6 +52,11 @@ Wrapper flags:
                       and inject a system-level git insteadOf rewrite for
                       dev.azure.com so in-container `git clone` against
                       private Azure Repos works without prompting.
+  --jira              Opt in to Atlassian Jira (Cloud): forward
+                      JIRA_USER_EMAIL / JIRA_BASE_URL / JIRA_API_TOKEN so
+                      in-container scripts can hit the Jira REST API
+                      (Basic auth = email:api-token). 1Password fallback
+                      via CLAUDE_DOCKER_JIRA_OP_REF (`op read` on host).
   --iterm             Wrap claude in tmux -CC (iTerm2 control mode → native
                       panes). Equivalent to CLAUDE_DOCKER_TMUX=cc.
   --tmux              Wrap claude in plain tmux (works in any terminal).
@@ -100,6 +105,7 @@ WITH_GLAB=0
 WITH_TFE=0
 WITH_TOFU=0
 WITH_ADO=0
+WITH_JIRA=0
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
 for arg in "$@"; do
@@ -118,6 +124,7 @@ for arg in "$@"; do
     --tfe)          WITH_TFE=1 ;;
     --tofu)         WITH_TOFU=1 ;;
     --ado)          WITH_ADO=1 ;;
+    --jira)         WITH_JIRA=1 ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
@@ -217,6 +224,11 @@ if [ "$WITH_TFE" = "1" ] || [ "$WITH_TOFU" = "1" ]; then
   ENV_VARS+=(TF_TOKEN_app_terraform_io)
 fi
 [ "$WITH_ADO" = "1" ] && ENV_VARS+=(AZURE_DEVOPS_EXT_PAT)
+# JIRA_USER_EMAIL + JIRA_BASE_URL are non-secret (email + site URL); only
+# JIRA_API_TOKEN is a secret. All three are forwarded as a unit because
+# the in-container Jira REST scripts need all three to function (Basic
+# auth pairs the email with the token; the URL routes the request).
+[ "$WITH_JIRA" = "1" ] && ENV_VARS+=(JIRA_USER_EMAIL JIRA_BASE_URL JIRA_API_TOKEN)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -356,6 +368,31 @@ if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
   fi
 fi
 
+# --jira fallback: when JIRA_API_TOKEN isn't pre-set on the host, read it
+# from 1Password via `op read "$CLAUDE_DOCKER_JIRA_OP_REF"`. Same shape as
+# the --ado fallback above — Atlassian API tokens aren't tied to a CLI
+# tool with a config file on disk, so the source is opt-in via env var
+# pointing at an op:// reference (e.g.
+# CLAUDE_DOCKER_JIRA_OP_REF="op://SBP.DataChecks/jira/api-token"). Silent
+# on failure: op missing, not signed in, or item absent — in-container
+# Jira calls then fail loudly with HTTP 401, which is more debuggable
+# than a half-injected token. JIRA_USER_EMAIL / JIRA_BASE_URL are
+# forwarded as plain env vars (they're not secrets and Atlassian's Basic
+# auth needs the email paired with the token); no op-read fallback for
+# those — they're either in the host env or surfaced by the in-container
+# project (e.g. its scripts/*.env file).
+if [ "$WITH_JIRA" = "1" ] && [ -z "${JIRA_API_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_JIRA_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    jira_tok=$(op read "$CLAUDE_DOCKER_JIRA_OP_REF" 2>/dev/null || true)
+    if [ -n "$jira_tok" ]; then
+      JIRA_API_TOKEN="$jira_tok"
+      export JIRA_API_TOKEN
+      ENV_ARGS+=("-e" "JIRA_API_TOKEN")
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can write a `git config --system url.<host>.insteadOf` for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -402,6 +439,7 @@ DOCKER_FLAGS=()
 [ "$WITH_TFE" = "1" ]      && DOCKER_FLAGS+=("tfe")
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
+[ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
 [ "$RO_WORKSPACES" = "1" ] && DOCKER_FLAGS+=("ro")
 if [ "${#DOCKER_FLAGS[@]}" -gt 0 ]; then
