@@ -171,6 +171,36 @@ RUN curl -fsSL "https://github.com/tofuutils/tofuenv/archive/refs/tags/v${TOFUEN
  && ln -s /opt/tofuenv/bin/tofu /usr/local/bin/tofu \
  && rm /tmp/tofuenv.tar.gz
 
+# Put /root/.local/bin on PATH so user-space installs land on PATH for every
+# process in the container — including non-interactive `bash -c` subprocesses
+# spawned by Claude's Bash tool, which do NOT source /root/.bashrc. Files under
+# /root/.local survive across runs via the claude-code-root named volume, so
+# `uv tool install <pkg>` (or `pipx install <pkg>`) inside a container becomes
+# a persistent user-space install.
+ENV PATH=/root/.local/bin:$PATH
+
+# Azure CLI — Microsoft's apt repo. Same trust model as the `gh` block above:
+# keyring fetched at build, repo pinned by signed-by. No version pin (matches
+# `gh`); MS publishes only the latest in this repo, so rebuilds track upstream.
+# Suite is pinned to `noble` (Ubuntu 24.04 LTS) because MS does not yet ship a
+# suite for `resolute` (26.04 dev branch); the noble package is glibc-compatible
+# on 26.04 and is what MS's `aka.ms/InstallAzureCLIDeb` installer falls back to
+# for unsupported releases. Bump the AZ_DIST suite when MS adds a 26.04 suite.
+# Why baked in (not `uv tool install azure-cli`): PyPI's azure-cli is frozen at
+# 2.0.67 (2018); MS only ships current `az` via apt/yum/MSI. `--ado` controls
+# credential forwarding (AZURE_DEVOPS_EXT_PAT); `az` itself is always present
+# for parity with `aws`/`gh`/`glab`.
+ARG AZ_DIST=noble
+RUN install -d -m 0755 /etc/apt/keyrings \
+ && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+      | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
+ && chmod go+r /etc/apt/keyrings/microsoft.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ ${AZ_DIST} main" \
+      > /etc/apt/sources.list.d/azure-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends azure-cli \
+ && rm -rf /var/lib/apt/lists/*
+
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required
 # (not `on`) because Claude does not send the kitty activation request that

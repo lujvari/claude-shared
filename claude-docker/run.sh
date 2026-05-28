@@ -48,6 +48,10 @@ Wrapper flags:
                       ~/.terraform.d/credentials.tfrc.json (:ro), and
                       forward TF_TOKEN_app_terraform_io; unmask
                       in-container `tofu login` state.
+  --ado               Opt in to Azure DevOps: forward AZURE_DEVOPS_EXT_PAT
+                      and inject a system-level git insteadOf rewrite for
+                      dev.azure.com so in-container `git clone` against
+                      private Azure Repos works without prompting.
   --iterm             Wrap claude in tmux -CC (iTerm2 control mode → native
                       panes). Equivalent to CLAUDE_DOCKER_TMUX=cc.
   --tmux              Wrap claude in plain tmux (works in any terminal).
@@ -95,6 +99,7 @@ WITH_GH=0
 WITH_GLAB=0
 WITH_TFE=0
 WITH_TOFU=0
+WITH_ADO=0
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
 for arg in "$@"; do
@@ -112,6 +117,7 @@ for arg in "$@"; do
     --glab)         WITH_GLAB=1 ;;
     --tfe)          WITH_TFE=1 ;;
     --tofu)         WITH_TOFU=1 ;;
+    --ado)          WITH_ADO=1 ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
@@ -210,6 +216,7 @@ ENV_VARS=()
 if [ "$WITH_TFE" = "1" ] || [ "$WITH_TOFU" = "1" ]; then
   ENV_VARS+=(TF_TOKEN_app_terraform_io)
 fi
+[ "$WITH_ADO" = "1" ] && ENV_VARS+=(AZURE_DEVOPS_EXT_PAT)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -329,12 +336,43 @@ if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ]; then
   fi
 fi
 
+# --ado fallback: when AZURE_DEVOPS_EXT_PAT isn't pre-set on the host,
+# read it from 1Password via `op read "$CLAUDE_DOCKER_ADO_OP_REF"`. Unlike
+# the --gh/--glab fallbacks above, there's no CLI tool with a stable
+# on-disk config to parse (ADO PATs typically live in a password manager,
+# not in a tool config), so the source is opt-in via env var pointing at
+# an op:// reference (e.g. CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential").
+# Silent on failure: op missing, not signed in, or item absent — the
+# entrypoint simply won't inject an insteadOf rewrite for this session.
+if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    ado_pat=$(op read "$CLAUDE_DOCKER_ADO_OP_REF" 2>/dev/null || true)
+    if [ -n "$ado_pat" ]; then
+      AZURE_DEVOPS_EXT_PAT="$ado_pat"
+      export AZURE_DEVOPS_EXT_PAT
+      ENV_ARGS+=("-e" "AZURE_DEVOPS_EXT_PAT")
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can write a `git config --system url.<host>.insteadOf` for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
 # canonical public host.
 [ -n "$gh_hosts" ]   && ENV_ARGS+=("-e" "CLAUDE_DOCKER_GITHUB_HOSTS=$gh_hosts")
 [ -n "$glab_hosts" ] && ENV_ARGS+=("-e" "CLAUDE_DOCKER_GITLAB_HOSTS=$glab_hosts")
+
+# Azure DevOps host list: no host-side config to enumerate (PATs are not
+# tied to a CLI tool with a config file on disk like gh/glab), so default
+# to dev.azure.com and honor CLAUDE_DOCKER_ADO_HOSTS as the override.
+# Forward only when --ado is set; the entrypoint gates injection on the
+# token being present, so no rewrite happens for sessions that didn't
+# opt in even if the env var leaked.
+if [ "$WITH_ADO" = "1" ]; then
+  ado_hosts="${CLAUDE_DOCKER_ADO_HOSTS:-dev.azure.com}"
+  ENV_ARGS+=("-e" "CLAUDE_DOCKER_ADO_HOSTS=$ado_hosts")
+fi
 
 # Forward host git identity so in-container `git commit` works without a
 # per-invocation `-c user.email=...` dance. Non-opt-in: user.name/user.email
@@ -363,6 +401,7 @@ DOCKER_FLAGS=()
 [ "$WITH_GLAB" = "1" ]     && DOCKER_FLAGS+=("glab")
 [ "$WITH_TFE" = "1" ]      && DOCKER_FLAGS+=("tfe")
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
+[ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
 [ "$RO_WORKSPACES" = "1" ] && DOCKER_FLAGS+=("ro")
 if [ "${#DOCKER_FLAGS[@]}" -gt 0 ]; then
@@ -476,6 +515,8 @@ fi
 docker run --rm -it \
   --security-opt no-new-privileges \
   --cap-drop ALL \
+  --cap-add DAC_OVERRIDE \
+  --cap-add FOWNER \
   "${MOUNT_ARGS[@]}" \
   "${ENV_ARGS[@]}" \
   -w "$CWD" \

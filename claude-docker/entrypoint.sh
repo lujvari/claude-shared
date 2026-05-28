@@ -58,6 +58,14 @@ inject_insteadof "$gh_tok" "${CLAUDE_DOCKER_GITHUB_HOSTS:-github.com}"
 # no GITHUB_TOKEN-style synonym to pick between.
 inject_insteadof "${GITLAB_TOKEN:-}" "${CLAUDE_DOCKER_GITLAB_HOSTS:-gitlab.com}"
 
+# AZURE_DEVOPS_EXT_PAT is the env var the `az devops` extension honours.
+# Azure Repos HTTPS auth accepts any non-empty username paired with a PAT
+# as the password, so the same `oauth2:<tok>@<host>` shape used for
+# gh/glab works unchanged here. CLAUDE_DOCKER_ADO_HOSTS defaults to
+# dev.azure.com in run.sh; legacy `*.visualstudio.com` hosts are out of
+# scope unless the user sets the override explicitly.
+inject_insteadof "${AZURE_DEVOPS_EXT_PAT:-}" "${CLAUDE_DOCKER_ADO_HOSTS:-dev.azure.com}"
+
 # `exec` so signals (Ctrl-C in tmux, container stop) reach claude/tmux
 # directly without an extra shell hop intercepting them.
 exec "$@"
