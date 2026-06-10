@@ -131,23 +131,30 @@ RUN set -e; ARCH=$(uname -m); \
  && rm -rf /tmp/uv /tmp/uv.tar.gz
 
 # claude-code — native binary, Anthropic's recommended install path.
-# Replicates the verify-and-place steps of claude.ai/install.sh without
-# running the binary's `install` bootstrap (we don't need its launcher /
-# shell-integration hooks; the binary itself is self-contained). Manifest
-# at downloads.claude.ai/.../<ver>/manifest.json carries per-platform
-# sha256s; refresh both SHA256 ARGs in the same commit as the version bump.
-# Ubuntu base is glibc, so we use linux-x64 / linux-arm64 (not the -musl
-# variants). Bump procedure noted on the CLAUDE_CODE_SHA256_* ARGs above.
+# Replicates the download+verify steps of claude.ai/install.sh without
+# running the binary's `install` bootstrap. Manifest at
+# downloads.claude.ai/.../<ver>/manifest.json carries per-platform sha256s;
+# refresh both SHA256 ARGs in the same commit as the version bump. Ubuntu
+# base is glibc, so we use linux-x64 / linux-arm64 (not the -musl variants).
+#
+# Installed under /opt so it survives the claude-code-root named volume
+# masking /root at runtime (same rationale as tfenv/gradle/tofuenv). The
+# native binary self-checks for itself at /root/.local/bin/claude (the
+# launcher path it would normally create via `claude install`) — wiring
+# that symlink up in the image's /root would be masked on every bump, so
+# the entrypoint creates it at container start instead.
 RUN set -e; ARCH=$(uname -m); \
     case "$ARCH" in \
       x86_64)  PLATFORM=linux-x64;   SHA="${CLAUDE_CODE_SHA256_X86_64}" ;; \
       aarch64) PLATFORM=linux-arm64; SHA="${CLAUDE_CODE_SHA256_AARCH64}" ;; \
       *) echo "Unsupported arch for claude-code: $ARCH" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/${PLATFORM}/claude" \
-      -o /usr/local/bin/claude \
- && echo "${SHA}  /usr/local/bin/claude" | sha256sum -c - \
- && chmod 0755 /usr/local/bin/claude
+    mkdir -p /opt/claude-code \
+ && curl -fsSL "https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/${PLATFORM}/claude" \
+      -o /opt/claude-code/claude \
+ && echo "${SHA}  /opt/claude-code/claude" | sha256sum -c - \
+ && chmod 0755 /opt/claude-code/claude \
+ && ln -s /opt/claude-code/claude /usr/local/bin/claude
 
 # npm-backed CLIs — pinned versions. Trust = npm's signed dist.integrity;
 # run `npm audit signatures <pkg>@<ver>` when bumping.

@@ -11,6 +11,17 @@
 # own /root/.gitconfig entry wins, preserving user intent.
 set -eu
 
+# claude-code native binary lives at /opt/claude-code/claude (image layer,
+# survives volume masking on bump). The binary self-checks for itself at
+# /root/.local/bin/claude — wire that symlink up here so it always points
+# to the current image's binary regardless of what the claude-code-root
+# named volume has cached from a prior image. `-f` overwrites any stale
+# regular file or symlink left there by an earlier `claude install`.
+if [ -x /opt/claude-code/claude ]; then
+  mkdir -p /root/.local/bin
+  ln -sf /opt/claude-code/claude /root/.local/bin/claude
+fi
+
 # Inject `url.<host>.insteadOf` rewrites for each host in a CSV list.
 # No-op on empty token or empty host list — that path is the
 # no-opt-in case where this script should be invisible.
