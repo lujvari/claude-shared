@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Directory holding this wrapper — used to locate wrapper-shipped assets
+# (e.g. hooks/) that get mounted into every container regardless of the
+# user's host ~/.claude config.
+WRAPPER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # Override via CLAUDE_DOCKER_IMAGE so child images (FROM claude-code:local) can
 # reuse this wrapper's full feature set — credential opt-ins, statusline tag,
 # git-identity forwarding, host-config bind-mounts — without forking it.
@@ -480,6 +485,15 @@ for item in agents commands skills; do
     MOUNT_ARGS+=("-v" "$stage/$item:/root/.claude/$item:ro")
   fi
 done
+
+# Wrapper-shipped hooks: ship with the docker repo itself so every container
+# spawned by this wrapper gets them, independent of the user's host .claude
+# config. Activation still requires the user's settings.docker.json to wire
+# the hook commands into Claude's hook events.
+if [ -d "$WRAPPER_DIR/hooks" ]; then
+  cp -RL "$WRAPPER_DIR/hooks" "$stage/hooks"
+  MOUNT_ARGS+=("-v" "$stage/hooks:/root/.claude/hooks:ro")
+fi
 if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
   MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/CLAUDE.md:/root/.claude/CLAUDE.md:ro")
 fi
