@@ -13,7 +13,10 @@ SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 # NODE_VERSION format is NodeSource's: <upstream>-1nodesource1.
 # Bump with: curl -fsSL https://deb.nodesource.com/node_20.x/dists/nodistro/main/binary-amd64/Packages.gz | gunzip | grep -E '^(Package|Version):' | head -4
 ARG NODE_VERSION=20.20.2-1nodesource1
-ARG CLAUDE_CODE_VERSION=2.1.131
+ARG CLAUDE_CODE_VERSION=2.1.170
+# Bump with: curl -fsSL https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/manifest.json | jq -r '.platforms["linux-x64"].checksum, .platforms["linux-arm64"].checksum'
+ARG CLAUDE_CODE_SHA256_X86_64=849e007277a0442ab27570d3e3d6d43787507946590e8dd1947e5a39b7081f9e
+ARG CLAUDE_CODE_SHA256_AARCH64=1bb9d032440a75532f7dd4cafbc687f220aaf16c63eba17e192dfbec2f04bd25
 # Policy: only pin versions ≥ 5 days old (loud supply-chain attacks usually get
 # yanked within hours; the soak catches those, not quiet/targeted compromises).
 ARG OPENSPEC_VERSION=1.3.0
@@ -31,6 +34,10 @@ ARG TFENV_VERSION=3.0.0
 ARG TFENV_SHA256=463132e45a211fa3faf85e62fdfaa9bb746343ff1954ccbad91cae743df3b648
 ARG TOFUENV_VERSION=1.0.7
 ARG TOFUENV_SHA256=047c6a01a0d4c7ded2cf126ae1e891bb3479b2544ec2d2f0d3951de2d08f6c7d
+ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
+ARG ANDROID_CMDLINE_TOOLS_SHA256=2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
+ARG GRADLE_VERSION=8.10
+ARG GRADLE_SHA256=5b9c5eb3f9fc2c94abaea57d90bd78747ca117ddbbf96c859d3741181a12bf2a
 
 # Make apt runnable under --cap-drop ALL at runtime. Two pieces:
 #  1. APT::Sandbox::User "root" stops the http method from setgroups()→_apt
@@ -123,20 +130,34 @@ RUN set -e; ARCH=$(uname -m); \
  && install -m 0755 "/tmp/uv/uv-${ARCH}-unknown-linux-gnu/uvx" /usr/local/bin/uvx \
  && rm -rf /tmp/uv /tmp/uv.tar.gz
 
+# claude-code — native binary, Anthropic's recommended install path.
+# Replicates the verify-and-place steps of claude.ai/install.sh without
+# running the binary's `install` bootstrap (we don't need its launcher /
+# shell-integration hooks; the binary itself is self-contained). Manifest
+# at downloads.claude.ai/.../<ver>/manifest.json carries per-platform
+# sha256s; refresh both SHA256 ARGs in the same commit as the version bump.
+# Ubuntu base is glibc, so we use linux-x64 / linux-arm64 (not the -musl
+# variants). Bump procedure noted on the CLAUDE_CODE_SHA256_* ARGs above.
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  PLATFORM=linux-x64;   SHA="${CLAUDE_CODE_SHA256_X86_64}" ;; \
+      aarch64) PLATFORM=linux-arm64; SHA="${CLAUDE_CODE_SHA256_AARCH64}" ;; \
+      *) echo "Unsupported arch for claude-code: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/${PLATFORM}/claude" \
+      -o /usr/local/bin/claude \
+ && echo "${SHA}  /usr/local/bin/claude" | sha256sum -c - \
+ && chmod 0755 /usr/local/bin/claude
+
 # npm-backed CLIs — pinned versions. Trust = npm's signed dist.integrity;
 # run `npm audit signatures <pkg>@<ver>` when bumping.
 # --ignore-scripts blocks lifecycle hooks for every package + transitive dep
-# (hard security boundary, kept on). claude-code 2.1.x ships its real binary
-# in a per-arch optional-dep package; the launcher's postinstall (install.cjs)
-# copies it over bin/claude.exe. Without it `claude` is a stub that errors at
-# exec. We invoke that one script ourselves — platform-detect + file copy,
-# no network/exec, audit-verified for 2.1.131; re-read on each bump.
-# `npm root -g` over a hardcoded path so we don't break on a different prefix.
+# (hard security boundary, kept on). claude-code itself is no longer here:
+# it ships as a native binary above, downloaded straight from Anthropic with
+# a pinned sha256 — the npm route was a wrapper around the same binary.
 RUN npm install -g --ignore-scripts \
-      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@fission-ai/openspec@${OPENSPEC_VERSION}" \
-      "pnpm@${PNPM_VERSION}" \
- && node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs"
+      "pnpm@${PNPM_VERSION}"
 
 # tfenv — pure-bash terraform version manager. Arch-independent (just
 # bash scripts), so a single sha256 covers amd64 and arm64. We deliberately
@@ -200,6 +221,63 @@ RUN install -d -m 0755 /etc/apt/keyrings \
  && apt-get update \
  && apt-get install -y --no-install-recommends azure-cli \
  && rm -rf /var/lib/apt/lists/*
+
+# OpenJDK 17 (headless) — Android Gradle Plugin 8.x requires JDK 17. Headless
+# is sufficient: no AWT/Swing in a CLI build. Same apt trust model as the
+# Ubuntu base; no third-party repo.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
+ && rm -rf /var/lib/apt/lists/*
+
+# Gradle 8.10 — pinned. Projects pin their own version via
+# gradle-wrapper.properties (the wrapper downloads on first run); the system
+# gradle is for bootstrapping new projects (`gradle wrapper --gradle-version
+# X.Y`) and for environments where wrapper download is blocked. Installed
+# under /opt to survive the claude-code-root named volume (same rationale as
+# tfenv/tofuenv above). Hash matches
+# services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip.sha256.
+RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+      -o /tmp/gradle.zip \
+ && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
+ && unzip -q /tmp/gradle.zip -d /opt \
+ && rm /tmp/gradle.zip
+
+# Android SDK — cmdline-tools (sdkmanager) + platform-tools + Android 34
+# platform + Build-Tools 34.0.0. Layout follows Google's
+# `cmdline-tools/latest/` convention so sdkmanager finds itself; the zip
+# unpacks into `cmdline-tools/`, which we rename to `latest`. Licenses
+# accepted at build time so first-time `gradlew assembleDebug` doesn't
+# prompt. Installed under /opt for the same upgrade-cleanliness reason as
+# tfenv/gradle — anything under /root would be frozen by the
+# claude-code-root named volume on first run.
+#
+# Platform + Build-Tools versions track Android API level; bump them in
+# step. Three SDK packages cost ~500 MB image-side; that's the price of
+# building Android locally without an Android Studio install. Gradle
+# dependency cache (~/.gradle) is per-project and lives in the
+# claude-code-root named volume, so it persists across container runs.
+#
+# Licenses are accepted via `printf 'y\n%.0s' $(seq 1 50)`, NOT `yes |`:
+# under the Dockerfile's `SHELL [..., -eo, pipefail]`, `yes` getting
+# SIGPIPE when sdkmanager closes stdin yields exit 141 and fails the
+# RUN. printf streams a fixed number of acks and exits clean. 50 covers
+# the current ~6 EULAs with headroom; bump if a future SDK adds more.
+ENV ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk
+RUN curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" \
+      -o /tmp/cmdline-tools.zip \
+ && echo "${ANDROID_CMDLINE_TOOLS_SHA256}  /tmp/cmdline-tools.zip" | sha256sum -c - \
+ && mkdir -p "${ANDROID_HOME}/cmdline-tools" \
+ && unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" \
+ && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
+ && rm /tmp/cmdline-tools.zip \
+ && printf 'y\n%.0s' $(seq 1 50) | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null \
+ && "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+      "platform-tools" \
+      "platforms;android-34" \
+      "build-tools;34.0.0" > /dev/null
+
+ENV PATH=${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:/opt/gradle-${GRADLE_VERSION}/bin:${PATH}
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required
