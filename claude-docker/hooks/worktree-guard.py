@@ -10,6 +10,10 @@ Dispatch via argv[1]:
          repo and we're not in our own linked worktree.
   touch  PostToolUse on Edit/Write — refresh our heartbeat.
   stop   SessionEnd/Stop — remove every registry entry this session wrote.
+         On SessionEnd only, also garbage-collect linked worktrees of the
+         repos this session touched that are safe to reap: clean, unlocked,
+         holding no live session, and already landed (merged into origin/main
+         or tracking a now-gone upstream — the squash-on-merge signal).
   start  SessionStart — no-op; we don't know which repo we'll touch yet.
 """
 
@@ -152,20 +156,185 @@ def handle_touch(ev: dict) -> int:
     return 0
 
 
+def worktrees(main: str) -> list[dict]:
+    """Parse `git worktree list --porcelain` from the main checkout.
+
+    First record is the main worktree; the rest are linked. `locked` and
+    `detached` are flagged when present. branch is the short ref name.
+    """
+    out = git(main, "worktree", "list", "--porcelain")
+    if not out:
+        return []
+    trees: list[dict] = []
+    cur: dict = {}
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            if cur:
+                trees.append(cur)
+            cur = {"path": line[len("worktree "):], "locked": False,
+                   "detached": False, "branch": None}
+        elif line.startswith("branch "):
+            cur["branch"] = line[len("branch "):].replace("refs/heads/", "", 1)
+        elif line == "detached":
+            cur["detached"] = True
+        elif line.startswith("locked"):
+            cur["locked"] = True
+    if cur:
+        trees.append(cur)
+    return trees
+
+
+def upstream_gone(main: str, branch: str) -> bool:
+    """True if `branch` tracks a remote ref that no longer exists.
+
+    This is the `[gone]` marker in `git status -sb`. In a squash-on-merge
+    workflow with delete-source-branch, this is the canonical "the MR landed,
+    the remote branch was cleaned up" signal — and the ONLY reliable one,
+    since a squash collapses the branch's commits into one whose patch-id
+    won't match (so cherry alone reports such a branch as unmerged forever).
+    Requires an upstream to have been configured; an unpushed local-only
+    branch has none and returns False.
+    """
+    # %(upstream:track) is exactly what `git status -sb` renders as [gone];
+    # it stays correct even after the remote-tracking ref is pruned, whereas
+    # <branch>@{upstream} just errors once that ref is gone.
+    track = git(main, "for-each-ref", "--format=%(upstream:track)",
+                f"refs/heads/{branch}")
+    return track == "[gone]"
+
+
+def merged_into_main(main: str, branch: str) -> bool:
+    """True if `branch` is safe to reap as already-landed work.
+
+    Two independent signals, either sufficient:
+      * every commit has a patch-id equivalent in origin/main
+        (`git cherry`) — covers fast-forward / rebase / non-squash merges;
+      * its tracked upstream is gone — covers squash-on-merge, where cherry
+        can't see the equivalence.
+    Any failure to resolve returns False so we never remove on uncertainty.
+    No fetch — a stale origin/main only ever errs toward keeping a worktree.
+    """
+    if upstream_gone(main, branch):
+        return True
+    if not git(main, "rev-parse", "--verify", "-q", "origin/main"):
+        return False
+    out = git(main, "cherry", "origin/main", branch)
+    if out is None:
+        return False
+    return not any(ln.startswith("+") for ln in out.splitlines())
+
+
+def fresh_heartbeat_under(common: str, path: str) -> bool:
+    """True if a live session's cwd sits inside `path` (don't reap it)."""
+    reg = Path(common) / "claude-sessions"
+    if not reg.is_dir():
+        return False
+    now = time.time()
+    rp = os.path.realpath(path)
+    for f in reg.glob("*.json"):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if now - float(data.get("last_seen", 0)) > STALE_SECONDS:
+            continue
+        cwd = os.path.realpath(data.get("cwd", ""))
+        if cwd == rp or cwd.startswith(rp + os.sep):
+            return True
+    return False
+
+
+# Gitignored files git would silently delete on `worktree remove` — losing
+# these is unrecoverable, so their presence vetoes a reap. Regenerable caches
+# (node_modules, __pycache__, dist, …) are deliberately NOT listed: a worktree
+# whose only ignored content matches none of these is still safe to reap.
+SENSITIVE_IGNORED = (
+    ".env", ".env.*", "*.tfstate", "*.tfstate.*", ".terraform",
+    "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa", "id_dsa",
+    "id_ecdsa", "id_ed25519", "credentials", "*.secret",
+)
+
+
+def has_sensitive_ignored(path: str) -> bool:
+    """True if the worktree holds gitignored files worth protecting.
+
+    `git status --porcelain --ignored` prefixes ignored entries with '!! ';
+    directories come through as a single 'dir/' entry. We match each entry's
+    basename against SENSITIVE_IGNORED so an ignored .env / *.tfstate / key
+    blocks the reap, while a node_modules-only worktree does not.
+    """
+    import fnmatch
+    out = git(path, "status", "--porcelain", "--ignored")
+    if not out:
+        return False
+    for line in out.splitlines():
+        if not line.startswith("!! "):
+            continue
+        base = os.path.basename(line[3:].rstrip("/"))
+        if any(fnmatch.fnmatch(base, pat) for pat in SENSITIVE_IGNORED):
+            return True
+    return False
+
+
+def sweep(common: str) -> None:
+    """Remove linked worktrees that are safe to reap: clean, merged into
+    origin/main, unlocked, not detached, holding no live session, and not the
+    dir we're running from. Conservative — any doubt and we leave it."""
+    main = os.path.dirname(common)  # git-common-dir is always <main>/.git
+    trees = worktrees(main)
+    if len(trees) < 2:
+        return
+    self_cwd = os.path.realpath(os.getcwd())
+    for wt in trees[1:]:  # skip [0] = main checkout
+        path, branch = wt["path"], wt["branch"]
+        if wt["locked"] or wt["detached"] or not branch:
+            continue
+        rp = os.path.realpath(path)
+        if self_cwd == rp or self_cwd.startswith(rp + os.sep):
+            continue
+        if git(path, "status", "--porcelain"):  # dirty / untracked → keep
+            continue
+        if has_sensitive_ignored(path):  # gitignored .env / tfstate / key → keep
+            continue
+        if fresh_heartbeat_under(common, path):
+            continue
+        if not merged_into_main(main, branch):
+            continue
+        if git(main, "worktree", "remove", path) is None:
+            continue  # remove refused (raced / untracked files); leave it
+        # `-d` (not `-D`): delete the branch only when git is certain it is
+        # merged. For squash-merges git can't see the equivalence, so it
+        # refuses and the branch ref lingers harmlessly — never force-delete
+        # commits that might be unique (e.g. an abandoned, never-merged branch
+        # whose remote was deleted, which also shows up as [gone]).
+        git(main, "branch", "-d", branch)
+        sys.stderr.write(f"worktree-guard: reaped merged worktree {path} ({branch})\n")
+
+
 def handle_stop(ev: dict) -> int:
     my_sid = sid(ev)
     idx = Path(f"/tmp/claude-wg-{my_sid}.idx")
-    if not idx.exists():
-        return 0
-    for line in idx.read_text().splitlines():
+    commons: set[str] = set()
+    if idx.exists():
+        for line in idx.read_text().splitlines():
+            # idx line = <common>/claude-sessions/<sid>.json
+            commons.add(str(Path(line).parents[1]))
+            try:
+                Path(line).unlink()
+            except (OSError, FileNotFoundError):
+                pass
         try:
-            Path(line).unlink()
-        except (OSError, FileNotFoundError):
+            idx.unlink()
+        except OSError:
             pass
-    try:
-        idx.unlink()
-    except OSError:
-        pass
+    # Garbage-collect stale worktrees only when the session truly ends, not on
+    # every turn-end Stop (which would race a still-running idle session).
+    if ev.get("hook_event_name") == "SessionEnd":
+        for common in commons:
+            try:
+                sweep(common)
+            except Exception as e:
+                sys.stderr.write(f"worktree-guard sweep: {e}\n")
     return 0
 
 
