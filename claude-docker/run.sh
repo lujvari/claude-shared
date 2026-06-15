@@ -39,7 +39,10 @@ Wrapper flags:
   --aws               Opt in to AWS: mount ~/.aws/config + ~/.aws/sso (:ro)
                       and forward AWS_PROFILE / AWS_REGION /
                       AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /
-                      AWS_SESSION_TOKEN when set.
+                      AWS_SESSION_TOKEN when set. 1Password fallback
+                      via CLAUDE_DOCKER_AWS_OP_REF (`op read` on host)
+                      resolves fields access_key_id, secret_access_key,
+                      and optionally session_token / region.
   --gh                Opt in to GitHub: forward GH_TOKEN / GITHUB_TOKEN and
                       unmask in-container gh login state.
   --glab              Opt in to GitLab: mount glab-cli config (:ro) and
@@ -194,7 +197,9 @@ fi
 # Scoped AWS mount: only non-secret config + short-lived SSO bearer cache.
 # Excludes ~/.aws/credentials (long-lived access keys) and ~/.aws/cli/cache
 # (cached assume-role STS). Env-var flow (AWS_ACCESS_KEY_ID/...) still forwards
-# below for users who flatten creds with `aws configure export-credentials`.
+# below for users who flatten creds with `aws configure export-credentials`,
+# and CLAUDE_DOCKER_AWS_OP_REF resolves access keys from 1Password as a
+# host-less fallback — see the --aws OP fallback block further down.
 if [ "$WITH_AWS" = "1" ]; then
   [ -f "$HOME/.aws/config" ] && MOUNT_ARGS+=("-v" "$HOME/.aws/config:/root/.aws/config:ro")
   [ -d "$HOME/.aws/sso" ]    && MOUNT_ARGS+=("-v" "$HOME/.aws/sso:/root/.aws/sso:ro")
@@ -350,6 +355,53 @@ if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ]; then
       fi
     done
     IFS=$old_ifs
+  fi
+fi
+
+# --aws fallback: when AWS_ACCESS_KEY_ID isn't pre-set on the host AND no
+# host-side AWS state will produce env-var creds (no `aws sso login` cache
+# active, no `aws configure export-credentials` exported), read static
+# access keys from 1Password via `op read "$CLAUDE_DOCKER_AWS_OP_REF/<field>"`.
+# CLAUDE_DOCKER_AWS_OP_REF is a 1P item reference (e.g.
+# "op://claude-docker/aegon-aws") whose sub-fields are looked up by the
+# canonical field names below; any trailing "/" on the ref is tolerated.
+#   access_key_id     → AWS_ACCESS_KEY_ID     (required)
+#   secret_access_key → AWS_SECRET_ACCESS_KEY (required)
+#   session_token     → AWS_SESSION_TOKEN     (optional; usually absent
+#                       for long-lived IAM-user keys, present for
+#                       short-lived STS / SSO export dumps stored in 1P)
+#   region            → AWS_REGION            (optional; not a secret —
+#                       included so a single 1P item carries the whole
+#                       account config and the user doesn't also need to
+#                       set AWS_REGION on the host)
+# Required fields missing → silent no-op (matches --ado/--jira behaviour).
+# Region falls back to the host AWS_REGION if both are unset.
+if [ "$WITH_AWS" = "1" ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_AWS_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    aws_ref="${CLAUDE_DOCKER_AWS_OP_REF%/}"
+    aws_akid=$(op read "$aws_ref/access_key_id" 2>/dev/null || true)
+    aws_sak=$(op read "$aws_ref/secret_access_key" 2>/dev/null || true)
+    if [ -n "$aws_akid" ] && [ -n "$aws_sak" ]; then
+      AWS_ACCESS_KEY_ID="$aws_akid"
+      AWS_SECRET_ACCESS_KEY="$aws_sak"
+      export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+      ENV_ARGS+=("-e" "AWS_ACCESS_KEY_ID" "-e" "AWS_SECRET_ACCESS_KEY")
+      aws_st=$(op read "$aws_ref/session_token" 2>/dev/null || true)
+      if [ -n "$aws_st" ]; then
+        AWS_SESSION_TOKEN="$aws_st"
+        export AWS_SESSION_TOKEN
+        ENV_ARGS+=("-e" "AWS_SESSION_TOKEN")
+      fi
+      if [ -z "${AWS_REGION:-}" ]; then
+        aws_reg=$(op read "$aws_ref/region" 2>/dev/null || true)
+        if [ -n "$aws_reg" ]; then
+          AWS_REGION="$aws_reg"
+          export AWS_REGION
+          ENV_ARGS+=("-e" "AWS_REGION")
+        fi
+      fi
+    fi
   fi
 fi
 
