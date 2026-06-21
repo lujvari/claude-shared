@@ -65,6 +65,16 @@ Wrapper flags:
                       in-container scripts can hit the Jira REST API
                       (Basic auth = email:api-token). 1Password fallback
                       via CLAUDE_DOCKER_JIRA_OP_REF (`op read` on host).
+  --claude-auth       Share the HOST Claude login with the container:
+                      bind-mount <config-dir>/.credentials.json (read-write)
+                      over /root/.claude/.credentials.json so host and
+                      container use one OAuth token and refreshes propagate
+                      both ways. Ends the periodic in-container 401 / "run
+                      /login" that happens when a host re-login rotates the
+                      account token. Security: a --yolo container can then
+                      read/write your real Claude credential — a prompt-
+                      injected workspace file could exfiltrate it. Off by
+                      default. Env: CLAUDE_DOCKER_CONFIG_DIR sets the source.
   --iterm             Wrap claude in tmux -CC (iTerm2 control mode → native
                       panes). Equivalent to CLAUDE_DOCKER_TMUX=cc.
   --tmux              Wrap claude in plain tmux (works in any terminal).
@@ -114,6 +124,7 @@ WITH_TFE=0
 WITH_TOFU=0
 WITH_ADO=0
 WITH_JIRA=0
+WITH_CLAUDE_AUTH=0
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
 for arg in "$@"; do
@@ -133,6 +144,7 @@ for arg in "$@"; do
     --tofu)         WITH_TOFU=1 ;;
     --ado)          WITH_ADO=1 ;;
     --jira)         WITH_JIRA=1 ;;
+    --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
@@ -497,6 +509,7 @@ DOCKER_FLAGS=()
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
+[ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
 [ "$RO_WORKSPACES" = "1" ] && DOCKER_FLAGS+=("ro")
 if [ "${#DOCKER_FLAGS[@]}" -gt 0 ]; then
@@ -574,6 +587,26 @@ WRAP
 fi
 [ -f "$CLAUDE_CONFIG_DIR/settings.docker.json" ] \
   && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/root/.claude/settings.json:ro")
+
+# --claude-auth: share the host Claude OAuth login with the container.
+# Bind-mount the host credentials file (read-write) over the path Claude
+# reads inside the container. It sits "below" the claude-code-home volume
+# mount (/root/.claude) by path depth, so Docker overlays it regardless of
+# -v ordering — same mechanism as settings.docker.json above. RW (not :ro)
+# so an in-session token refresh writes straight back to the host file,
+# keeping a single source of truth and ending the host/container token
+# tug-of-war that surfaces as a periodic in-container 401 / "run /login".
+# Gated + off by default: it exposes the real credential to a --yolo
+# container (exfil surface via a prompt-injected workspace file), so it is
+# opt-in. Fails loudly if the host has never logged in.
+if [ "$WITH_CLAUDE_AUTH" = "1" ]; then
+  if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
+    MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/.credentials.json:/root/.claude/.credentials.json")
+  else
+    echo "claude-docker: --claude-auth set but $CLAUDE_CONFIG_DIR/.credentials.json not found; run 'claude' and /login on the host first" >&2
+    exit 1
+  fi
+fi
 
 CMD=(claude)
 # Grant claude read/write access to every mounted workspace, not just cwd.
