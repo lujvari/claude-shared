@@ -28,7 +28,7 @@ The help output SHALL include a one-line description for each of the following, 
 - Positional workspace arguments and the default-to-`$PWD` behaviour.
 - The `CLAUDE_DOCKER_TMUX` environment variable and its accepted values (`1`, `cc`).
 - The `CLAUDE_DOCKER_CONFIG_DIR` environment variable and its relationship to `--claude-dir`.
-- A brief note that `settings.docker.json` is mounted as `settings.json` in the container.
+- A brief note that `settings.docker.json` is mounted read-only as a seed and copied onto a writable `settings.json` on every container start.
 
 #### Scenario: All wrapper flags documented
 

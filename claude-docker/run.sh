@@ -106,8 +106,10 @@ in-container `git commit` works without a `-c user.email=...` override.
 Not gated: identity is already public on every commit you've ever made.
 Signing, credential helpers, and hooks are NOT forwarded.
 
-If <config-dir>/settings.docker.json exists it is mounted as settings.json
-in the container; the regular settings.json is never forwarded automatically.
+If <config-dir>/settings.docker.json exists it is mounted read-only as a
+seed and copied onto a writable settings.json on every container start, so
+in-session writes like /effort work and reset to the seed next start; the
+regular settings.json is never forwarded automatically.
 EOF
 }
 
@@ -585,8 +587,16 @@ WRAP
     "-v" "$stage/statusline-command.sh:/root/.claude/statusline-command.sh:ro"
   )
 fi
+# Mount settings.docker.json read-only as a *seed* (not directly as
+# settings.json): the entrypoint copies it onto a real, writable
+# settings.json on every start. A read-only single-file bind mount can't be
+# written or rename()'d over, so in-session settings writes — `/effort`
+# above all — failed with EBUSY. The seed copy lives in the per-container
+# writable layer of the claude-code-home volume, so each container's
+# settings.json is independent and `/effort` changes stay local to that
+# session; the on-start default always tracks this seed.
 [ -f "$CLAUDE_CONFIG_DIR/settings.docker.json" ] \
-  && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/root/.claude/settings.json:ro")
+  && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/root/.claude/settings.docker.json:ro")
 
 # --claude-auth: share the host Claude OAuth login with the container.
 # Bind-mount the host credentials file (read-write) over the path Claude

@@ -55,19 +55,25 @@ Host `hooks/` and the `hooks` settings key are intentionally NOT carried over �
 
 ### Requirement: Container-specific settings file
 
-When `$CLAUDE_CONFIG_DIR/settings.docker.json` exists, `run.sh` SHALL bind-mount it read-only at `/root/.claude/settings.json`. When absent, no host-derived settings file is mounted and Claude uses its built-in defaults. The regular `settings.json` is never forwarded automatically — users maintain `settings.docker.json` explicitly to prevent silent drift between host and container behaviour.
+When `$CLAUDE_CONFIG_DIR/settings.docker.json` exists, `run.sh` SHALL bind-mount it read-only as a *seed* at `/root/.claude/settings.docker.json`, and the entrypoint SHALL copy it onto a writable `/root/.claude/settings.json` on every container start. The host seed remains read-only; the writable copy lives in the per-container layer so in-session settings writes (notably `/effort`) succeed instead of failing with `EBUSY`, while the on-start default always tracks the seed and live changes reset to it on the next start. When absent, no host-derived settings file is mounted and Claude uses its built-in defaults. The regular `settings.json` is never forwarded automatically — users maintain `settings.docker.json` explicitly to prevent silent drift between host and container behaviour.
 
 #### Scenario: Container uses dedicated settings file
 
 - **GIVEN** `~/.claude/settings.docker.json` contains `{"effortLevel": "high"}`
 - **WHEN** user runs `claude-docker`
-- **THEN** `/root/.claude/settings.json` in the container is that file
+- **THEN** `/root/.claude/settings.json` in the container starts as a writable copy of that file
+
+#### Scenario: In-session settings write persists for the session
+
+- **GIVEN** `~/.claude/settings.docker.json` contains `{"effortLevel": "high"}`
+- **WHEN** the user runs `/effort` and selects `xhigh` mid-session
+- **THEN** the write succeeds (no `EBUSY`) and applies to that session, and a subsequent container start resets `settings.json` to the seed
 
 #### Scenario: Alternate config dir with settings.docker.json
 
 - **GIVEN** `~/.claude-anthropic/settings.docker.json` exists
 - **WHEN** user runs `claude-docker --claude-dir=~/.claude-anthropic ~/repo`
-- **THEN** `/root/.claude/settings.json` in the container is `~/.claude-anthropic/settings.docker.json`
+- **THEN** `/root/.claude/settings.json` in the container starts as a writable copy of `~/.claude-anthropic/settings.docker.json`
 
 #### Scenario: No settings file
 

@@ -76,7 +76,7 @@ On every run, these items are dereferenced (symlinks resolved) and bind-mounted 
 | `~/.claude/CLAUDE.md`             | global preferences (`gprefs`)       |
 | `~/.claude/statusline-command.sh` | statusline renderer                 |
 
-For `settings.json`, maintain a dedicated `~/.claude/settings.docker.json` (any valid Claude `settings.json` schema) — it's bind-mounted at `/root/.claude/settings.json` when present. Keeping it separate from your host `settings.json` avoids dragging macOS-only keys (`sandbox`, `env.SSL_CERT_FILE`, `enabledPlugins`) or host-filesystem `hooks` into the container. See [`examples/settings.docker.json`](examples/settings.docker.json) for a starting point.
+For `settings.json`, maintain a dedicated `~/.claude/settings.docker.json` (any valid Claude `settings.json` schema). It is bind-mounted read-only as a *seed* and the entrypoint copies it onto a writable `/root/.claude/settings.json` on every container start. This keeps the on-start default in sync with `settings.docker.json` while letting in-session writes like `/effort` succeed (a read-only single-file bind mount can't be written, which previously surfaced as `EBUSY`); such live changes apply to that container's session only and reset to the seed on the next start. Keeping it separate from your host `settings.json` avoids dragging macOS-only keys (`sandbox`, `env.SSL_CERT_FILE`, `enabledPlugins`) or host-filesystem `hooks` into the container. See [`examples/settings.docker.json`](examples/settings.docker.json) for a starting point.
 
 ### Git identity
 
