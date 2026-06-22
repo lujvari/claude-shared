@@ -13,10 +13,10 @@ SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 # NODE_VERSION format is NodeSource's: <upstream>-1nodesource1.
 # Bump with: curl -fsSL https://deb.nodesource.com/node_20.x/dists/nodistro/main/binary-amd64/Packages.gz | gunzip | grep -E '^(Package|Version):' | head -4
 ARG NODE_VERSION=20.20.2-1nodesource1
-ARG CLAUDE_CODE_VERSION=2.1.170
+ARG CLAUDE_CODE_VERSION=2.1.183
 # Bump with: curl -fsSL https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/manifest.json | jq -r '.platforms["linux-x64"].checksum, .platforms["linux-arm64"].checksum'
-ARG CLAUDE_CODE_SHA256_X86_64=849e007277a0442ab27570d3e3d6d43787507946590e8dd1947e5a39b7081f9e
-ARG CLAUDE_CODE_SHA256_AARCH64=1bb9d032440a75532f7dd4cafbc687f220aaf16c63eba17e192dfbec2f04bd25
+ARG CLAUDE_CODE_SHA256_X86_64=df3b409c5b25299df52c5ee81f64811dbdcb2e18c1beefe7f733c326f0a8cdce
+ARG CLAUDE_CODE_SHA256_AARCH64=260a6e43fe9c6fd8800317581982ff50e4f4401d02ef625faa4df723bb9710b3
 # Policy: only pin versions ≥ 5 days old (loud supply-chain attacks usually get
 # yanked within hours; the soak catches those, not quiet/targeted compromises).
 ARG OPENSPEC_VERSION=1.3.0
