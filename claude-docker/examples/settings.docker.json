@@ -6,5 +6,58 @@
   "effortLevel": "high",
   "autoUpdates": false,
   "model": "opus[1m]",
-  "teammateMode": "tmux"
+  "teammateMode": "tmux",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py check; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py bash-guard; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py touch; fi"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py stop; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py stop; fi"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -1,24 +1,37 @@
 #!/usr/bin/env python3
 """worktree-guard: stop concurrent Claude sessions from stomping the same repo.
 
-Registry lives inside each repo at <repo>/.git/claude-sessions/<sid>.json so
-any container with that repo bind-mounted can see it. Stale entries (no
-heartbeat for 30 minutes) get pruned on the next check.
+Both the session registry and the per-session worktrees live inside the repo's
+shared .git, so every container with that repo bind-mounted sees a consistent
+view:
+  * registry:  <repo>/.git/claude-sessions/<sid>.json   (heartbeats)
+  * worktrees: <repo>/.git/claude-worktrees/claude-<sid8>/
+
+Putting worktrees under the shared .git — never in container-local /tmp — is
+what keeps a peer container from seeing them as missing and reaping them with
+`git worktree prune`. Stale registry entries (no heartbeat for 30 minutes) are
+pruned on the next check.
 
 Dispatch via argv[1]:
-  check  PreToolUse on Edit/Write — block if another live session is on this
-         repo and we're not in our own linked worktree.
-  touch  PostToolUse on Edit/Write — refresh our heartbeat.
-  stop   SessionEnd/Stop — remove every registry entry this session wrote.
-         On SessionEnd only, also garbage-collect linked worktrees of the
-         repos this session touched that are safe to reap: clean, unlocked,
-         holding no live session, and already landed (merged into origin/main
-         or tracking a now-gone upstream — the squash-on-merge signal).
-  start  SessionStart — no-op; we don't know which repo we'll touch yet.
+  check       PreToolUse on Edit/Write — block if another live session is on
+              this repo and we're not in our own linked worktree; point the
+              caller at a worktree under the shared .git.
+  touch       PostToolUse on Edit/Write — refresh our heartbeat.
+  bash-guard  PreToolUse on Bash — refuse `git worktree prune` / `git worktree
+              remove` that would delete a live peer's worktree out from under
+              it (git offers no registry-aware guard for those, and a bare
+              `prune` ignores gc.worktreePruneExpire).
+  stop        SessionEnd/Stop — remove every registry entry this session wrote.
+              On SessionEnd only, also garbage-collect linked worktrees of the
+              repos this session touched that are safe to reap: clean, unlocked,
+              holding no live session, and already landed (merged into
+              origin/main or tracking a now-gone upstream — squash-on-merge).
+  start       SessionStart — no-op; we don't know which repo we'll touch yet.
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -79,6 +92,31 @@ def reg_dir(common: str) -> Path:
     return d
 
 
+def worktree_path(common: str, short: str) -> str:
+    """Per-session worktree dir, under the shared .git so every container sees
+    it — and so no peer's `git worktree prune` treats it as a missing dir."""
+    return os.path.join(common, "claude-worktrees", f"claude-{short}")
+
+
+def ensure_repo_config(common: str) -> None:
+    """Best-effort repo config that hardens worktree lifecycle for concurrent
+    containers. Idempotent; only writes when the value actually differs.
+
+      gc.worktreePruneExpire=never   — keep background `git gc` from reaping a
+        worktree whose dir merely looks missing. (A bare `git worktree prune`
+        ignores this, which is why bash-guard exists too.)
+      worktree.useRelativePaths=true — relative link files round-trip across
+        containers/host (git >= 2.48; harmless no-op on older git).
+    """
+    main = os.path.dirname(common)  # git-common-dir is always <main>/.git
+    for key, val in (
+        ("gc.worktreePruneExpire", "never"),
+        ("worktree.useRelativePaths", "true"),
+    ):
+        if git(main, "config", "--get", key) != val:
+            git(main, "config", key, val)
+
+
 def stamp(common: str, my_sid: str, cwd: str) -> None:
     """Write/refresh our entry and remember it for cleanup on session end."""
     entry = reg_dir(common) / f"{my_sid}.json"
@@ -124,6 +162,7 @@ def handle_check(ev: dict) -> int:
     if not paths:
         return 0
     top, common = paths
+    ensure_repo_config(common)
     my_sid = sid(ev)
     others = live_others(reg_dir(common), my_sid)
     if not others or in_linked_worktree(top, common):
@@ -133,11 +172,14 @@ def handle_check(ev: dict) -> int:
         f"{o['session_id'][:8]} (cwd={o.get('cwd','?')})" for o in others
     )
     short = my_sid[:8]
+    wt = worktree_path(common, short)
     sys.stderr.write(
         f"worktree-guard: another Claude session is active in {top}: {summary}.\n"
-        f"This session is in the main checkout; create your own worktree first:\n"
-        f"  git -C {top} worktree add /tmp/claude-wt-{short} -b claude-{short}\n"
-        f"  cd /tmp/claude-wt-{short}\n"
+        f"This session is in the main checkout; create your own worktree on the\n"
+        f"shared .git first (NOT /tmp — peer containers can't see /tmp, and would\n"
+        f"reap the worktree as 'missing'):\n"
+        f"  git -C {top} worktree add {wt} -b claude-{short}\n"
+        f"  cd {wt}\n"
         f"Then retry the edit from inside that worktree.\n"
     )
     return 2
@@ -152,8 +194,77 @@ def handle_touch(ev: dict) -> int:
     if not paths:
         return 0
     top, common = paths
+    ensure_repo_config(common)
     stamp(common, sid(ev), top)
     return 0
+
+
+def live_peer_under(others: list[dict], path: str) -> bool:
+    """True if any live peer session's cwd is at or under `path`."""
+    rp = os.path.realpath(path)
+    for o in others:
+        cwd = os.path.realpath(o.get("cwd", ""))
+        if cwd == rp or cwd.startswith(rp + os.sep):
+            return True
+    return False
+
+
+# Matches a `git ... worktree ... (prune|remove)` within one simple command
+# segment (stops at ; | &), so it won't fire across an unrelated chained cmd.
+_WT_DESTRUCTIVE = re.compile(r"\bgit\b[^\n;|&]*\bworktree\b[^\n;|&]*\b(prune|remove)\b")
+
+
+def _remove_targets(cmd: str) -> list[str]:
+    """Path args of a `git worktree remove` (non-flag tokens after `remove`).
+    Best-effort shell-naive split — good enough to tell which worktree is hit."""
+    toks = cmd.split()
+    try:
+        i = toks.index("remove")
+    except ValueError:
+        return []
+    return [t for t in toks[i + 1:] if not t.startswith("-")]
+
+
+def handle_bash_guard(ev: dict) -> int:
+    """Block a `git worktree prune`/`remove` that would yank a live peer's
+    worktree. The shared-.git location already stops a *bare* prune from seeing
+    peer worktrees as missing; this also covers an explicit `remove <path>` and
+    a `prune` aimed at a repo where peers are live."""
+    cmd = (ev.get("tool_input") or {}).get("command") or ""
+    m = _WT_DESTRUCTIVE.search(cmd)
+    if not m:
+        return 0
+    action = m.group(1)
+    cwd = ev.get("cwd") or os.getcwd()
+    paths = repo_of(cwd)
+    if not paths:
+        return 0
+    top, common = paths
+    others = live_others(reg_dir(common), sid(ev))
+    if not others:
+        return 0
+    # `remove <path>`: only block when a live peer sits under a targeted path —
+    # removing your own or a genuinely dead worktree stays allowed.
+    if action == "remove":
+        targets = _remove_targets(cmd)
+        rooted = [t if os.path.isabs(t) else os.path.join(cwd, t) for t in targets]
+        if targets and not any(live_peer_under(others, t) for t in rooted):
+            return 0
+    summary = ", ".join(
+        f"{o['session_id'][:8]} (cwd={o.get('cwd','?')})" for o in others
+    )
+    sys.stderr.write(
+        f"worktree-guard: refusing `git worktree {action}` — another Claude session "
+        f"is live in {top}: {summary}.\n"
+        f"That can delete a peer session's worktree registration and break it "
+        f"mid-run.\n"
+        f"Peer worktrees live under {common}/claude-worktrees/ and their registry "
+        f"entries self-expire after 30 min idle, so there is nothing to reap by "
+        f"hand while a peer is active.\n"
+        f"To remove a specific dead worktree, target its exact path and confirm no "
+        f"live session cwd sits under it.\n"
+    )
+    return 2
 
 
 def worktrees(main: str) -> list[dict]:
@@ -341,6 +452,7 @@ def handle_stop(ev: dict) -> int:
 HANDLERS = {
     "check": handle_check,
     "touch": handle_touch,
+    "bash-guard": handle_bash_guard,
     "stop": handle_stop,
     "start": lambda _ev: 0,
 }

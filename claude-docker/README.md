@@ -219,6 +219,26 @@ Use this when:
 
 **Layout caveat:** relative paths assume the worktree's location relative to the repo's `.git/` is the same in both environments. Nested layouts always satisfy this; moving a worktree to a totally different parent dir breaks both relative and absolute setups.
 
+## Concurrent Claude sessions (worktree-guard)
+
+Two Claude containers can have the same repo bind-mounted at once. `hooks/worktree-guard.py` stops them from stomping each other. Wire it through `settings.docker.json` — [`examples/settings.docker.json`](examples/settings.docker.json) now ships the full block (PreToolUse `check` + `bash-guard`, PostToolUse `touch`, SessionEnd/Stop `stop`).
+
+How it works:
+
+- A shared, heartbeat-based session registry lives in the repo's `.git/claude-sessions/`, visible to every container that mounts the repo.
+- The first session edits the main checkout. When a *second* session tries to Edit/Write the same checkout, the guard blocks it and points it at its own worktree.
+- Those per-session worktrees go under `<repo>/.git/claude-worktrees/claude-<sid8>/` — on the shared `.git`, **not** `/tmp`. This is load-bearing: a worktree in container-local `/tmp` is invisible to the other container, which then treats it as a missing-dir worktree and reaps it with `git worktree prune`, breaking the live session. Under the shared `.git` every container sees a consistent, non-prunable view.
+- On `SessionEnd` the guard removes its own registry entries and reaps only its own clean, already-landed worktrees; a live or unmerged peer is left alone.
+
+Secondary hardening the guard applies automatically:
+
+- Sets `gc.worktreePruneExpire=never` and `worktree.useRelativePaths=true` on the repo (idempotent), so background `git gc` never reaps a peer worktree and worktree link files round-trip across containers/host.
+- A `Bash` PreToolUse matcher refuses a `git worktree prune` / `git worktree remove` that would yank a live peer's worktree. A bare `git worktree prune` ignores `gc.worktreePruneExpire`, so this matcher is the only thing that actually catches it. Removing your own or a genuinely dead worktree stays allowed.
+
+**Do not run a bare `git worktree prune` in a shared-repo container** while another session may be live — the command is registry-blind. The guard now refuses it, but the habit is the hazard.
+
+This is distinct from the user-managed feature worktrees in [Git worktrees](#git-worktrees) above (yours to place at `<repo>/.claude/worktrees/<name>` with relative paths); the guard's `.git/claude-worktrees/` ones are ephemeral and self-cleaning.
+
 ## Pasting images
 
 `Cmd-V` to paste a clipboard image doesn't work inside the container — Claude Code reads the macOS clipboard via OS APIs that a Linux container can't reach. Workaround: save the image into any workspace you mounted (e.g. `Cmd-Shift-4` to Desktop, then move it into `~/repo`) and reference it from Claude with `@screenshot.png`.
