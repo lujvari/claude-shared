@@ -6,6 +6,18 @@ set -euo pipefail
 # user's host ~/.claude config.
 WRAPPER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
+# Real on-disk directory of this launcher, resolved through any symlinks (the
+# ~/bin/claude-docker launcher is typically a symlink into the repo). Used to
+# protect the launcher's own directory when a broad workspace mount sweeps it
+# in — see the read-only overlay in the workspace loop below.
+self_src="${BASH_SOURCE[0]}"
+while [ -h "$self_src" ]; do
+  self_ldir=$(cd -P "$(dirname "$self_src")" && pwd)
+  self_link=$(readlink "$self_src")
+  case "$self_link" in /*) self_src="$self_link" ;; *) self_src="$self_ldir/$self_link" ;; esac
+done
+SELF_DIR=$(cd -P "$(dirname "$self_src")" && pwd)
+
 # Override via CLAUDE_DOCKER_IMAGE so child images (FROM claude-code:local) can
 # reuse this wrapper's full feature set — credential opt-ins, statusline tag,
 # git-identity forwarding, host-config bind-mounts — without forking it.
@@ -36,13 +48,16 @@ Wrapper flags:
                       volumes. No OAuth token, gh login, shell history, or
                       session history persists across runs.
   --ro                Mount every workspace read-only (review / audit mode).
-  --tools             Mount a workspace's top-level tools/ subdir read-WRITE.
-                      By default, a tools/ subdir swept in by a broad mount
-                      (e.g. mounting all of C:\dev) is overlaid read-only so a
-                      --yolo container can't rewrite host tooling — including
-                      this launcher itself — and have the host execute it on
-                      the next start. Pass --tools when you knowingly need to
-                      edit tooling from inside the container.
+  --tools             Mount this launcher's OWN directory read-WRITE. By
+                      default, if a broad workspace mount sweeps the launcher
+                      dir in (e.g. mounting all of C:\dev pulls it in under
+                      tools/), that one directory is overlaid read-only so a
+                      --yolo container can't rewrite the host launcher or its
+                      shipped hooks and have the host run them on the next
+                      start. Only the launcher dir is pinned — the rest of the
+                      workspace, including everything else under tools/, stays
+                      writable. Pass --tools only when you need to edit the
+                      launcher itself from inside the container.
   --aws               Opt in to AWS: mount ~/.aws/config + ~/.aws/sso (:ro)
                       and forward AWS_PROFILE / AWS_REGION /
                       AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /
@@ -201,15 +216,24 @@ for ws in "${WORKSPACES[@]}"; do
   SEEN_NAMES+=("$name")
   SEEN_PATHS+=("$abs")
   MOUNT_ARGS+=("-v" "$abs:/workspaces/$name$ws_suffix")
-  # Safeguard: a top-level tools/ subdir swept in by a broad workspace mount
-  # (e.g. mounting all of C:\dev) holds cross-cutting tooling — including this
-  # launcher. Overlay it read-only by default so an in-container (root, --yolo)
-  # process can't rewrite the host launch path and have the host execute it on
-  # the next start. Docker resolves the nested bind mount by path depth, so the
-  # :ro child wins over the rw parent for that subtree. --tools opts into rw;
-  # --ro already makes the parent (and thus this) read-only, so skip then.
-  if [ "$RO_WORKSPACES" != "1" ] && [ "$WITH_TOOLS_RW" != "1" ] && [ -d "$abs/tools" ]; then
-    MOUNT_ARGS+=("-v" "$abs/tools:/workspaces/$name/tools:ro")
+  # Safeguard: if this launcher's own directory got swept into a broad
+  # workspace mount (e.g. mounting all of C:\dev pulls it in under tools/),
+  # overlay just that one directory read-only. An in-container (root, --yolo)
+  # process could otherwise rewrite the host launcher or its shipped hooks/ and
+  # have the host execute them on the next start (container -> host
+  # persistence). Only the launcher dir is pinned — the rest of the workspace,
+  # including everything else under tools/, stays writable. Docker resolves the
+  # nested bind mount by path depth, so the :ro child wins over the rw parent;
+  # the kernel enforces it (root + DAC_OVERRIDE/FOWNER can't write through ro).
+  # The "$abs"/* pattern matches only when SELF_DIR is strictly below the
+  # workspace, so mounting the launcher dir itself stays fully writable.
+  # --tools opts back into rw; --ro already makes the whole parent read-only.
+  if [ "$RO_WORKSPACES" != "1" ] && [ "$WITH_TOOLS_RW" != "1" ]; then
+    case "$SELF_DIR" in
+      "$abs"/*)
+        sub="${SELF_DIR#"$abs"}"
+        MOUNT_ARGS+=("-v" "$SELF_DIR:/workspaces/$name$sub:ro") ;;
+    esac
   fi
   CONTAINER_PATHS+=("/workspaces/$name")
 done
