@@ -415,6 +415,39 @@ if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ]; then
   fi
 fi
 
+# Hard-timeout wrapper around `op read`. Without it, a 1Password/network
+# outage makes each read hang until the TCP connect times out; across the
+# up-to-6 sequential reads below (4 for --aws, 1 each for --ado/--jira) that
+# silently added minutes to startup and dropped the creds with no message
+# (the old `2>/dev/null || true` swallowed the failure). Now each read is
+# capped at CLAUDE_DOCKER_OP_TIMEOUT seconds (default 5) and a warning naming
+# the ref is emitted on each timeout. Returns empty + non-zero so callers' existing
+# non-empty checks no-op the fallback exactly as before. `timeout` is
+# coreutils (gtimeout on macOS via brew); when neither is present we fall back
+# to a plain read so behaviour is unchanged on hosts without it.
+OP_READ_TIMEOUT="${CLAUDE_DOCKER_OP_TIMEOUT:-5}"
+if command -v timeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=timeout
+elif command -v gtimeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=gtimeout
+else OP_TIMEOUT_BIN=""; fi
+op_read() {
+  op_out=""; op_rc=0
+  if [ -n "$OP_TIMEOUT_BIN" ]; then
+    op_out=$("$OP_TIMEOUT_BIN" "$OP_READ_TIMEOUT" op read "$1" 2>/dev/null); op_rc=$?
+  else
+    op_out=$(op read "$1" 2>/dev/null); op_rc=$?
+  fi
+  # 124 = timeout tripped. Each call site runs op_read in a $(...) subshell,
+  # so a shared "warn once" flag wouldn't survive back to the parent — warn
+  # per timed-out read instead, naming the ref so the line stays useful. The
+  # ref is an op:// path, not the secret, so it's safe to print.
+  if [ "$op_rc" -eq 124 ]; then
+    echo "claude-docker: 'op read $1' timed out after ${OP_READ_TIMEOUT}s — 1Password unreachable (check VPN / WSL2 egress); skipping this credential." >&2
+    return 1
+  fi
+  printf '%s' "$op_out"
+  return "$op_rc"
+}
+
 # --aws fallback: when AWS_ACCESS_KEY_ID isn't pre-set on the host AND no
 # host-side AWS state will produce env-var creds (no `aws sso login` cache
 # active, no `aws configure export-credentials` exported), read static
@@ -437,21 +470,21 @@ if [ "$WITH_AWS" = "1" ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
    && [ -n "${CLAUDE_DOCKER_AWS_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
     aws_ref="${CLAUDE_DOCKER_AWS_OP_REF%/}"
-    aws_akid=$(op read "$aws_ref/access_key_id" 2>/dev/null || true)
-    aws_sak=$(op read "$aws_ref/secret_access_key" 2>/dev/null || true)
+    aws_akid=$(op_read "$aws_ref/access_key_id" || true)
+    aws_sak=$(op_read "$aws_ref/secret_access_key" || true)
     if [ -n "$aws_akid" ] && [ -n "$aws_sak" ]; then
       AWS_ACCESS_KEY_ID="$aws_akid"
       AWS_SECRET_ACCESS_KEY="$aws_sak"
       export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
       ENV_ARGS+=("-e" "AWS_ACCESS_KEY_ID" "-e" "AWS_SECRET_ACCESS_KEY")
-      aws_st=$(op read "$aws_ref/session_token" 2>/dev/null || true)
+      aws_st=$(op_read "$aws_ref/session_token" || true)
       if [ -n "$aws_st" ]; then
         AWS_SESSION_TOKEN="$aws_st"
         export AWS_SESSION_TOKEN
         ENV_ARGS+=("-e" "AWS_SESSION_TOKEN")
       fi
       if [ -z "${AWS_REGION:-}" ]; then
-        aws_reg=$(op read "$aws_ref/region" 2>/dev/null || true)
+        aws_reg=$(op_read "$aws_ref/region" || true)
         if [ -n "$aws_reg" ]; then
           AWS_REGION="$aws_reg"
           export AWS_REGION
@@ -473,7 +506,7 @@ fi
 if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
    && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
-    ado_pat=$(op read "$CLAUDE_DOCKER_ADO_OP_REF" 2>/dev/null || true)
+    ado_pat=$(op_read "$CLAUDE_DOCKER_ADO_OP_REF" || true)
     if [ -n "$ado_pat" ]; then
       AZURE_DEVOPS_EXT_PAT="$ado_pat"
       export AZURE_DEVOPS_EXT_PAT
@@ -498,7 +531,7 @@ fi
 if [ "$WITH_JIRA" = "1" ] && [ -z "${JIRA_API_TOKEN:-}" ] \
    && [ -n "${CLAUDE_DOCKER_JIRA_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
-    jira_tok=$(op read "$CLAUDE_DOCKER_JIRA_OP_REF" 2>/dev/null || true)
+    jira_tok=$(op_read "$CLAUDE_DOCKER_JIRA_OP_REF" || true)
     if [ -n "$jira_tok" ]; then
       JIRA_API_TOKEN="$jira_tok"
       export JIRA_API_TOKEN

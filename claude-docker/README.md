@@ -289,6 +289,27 @@ The child Dockerfile uses `FROM claude-code:local` (locally-built tag) — assum
 
 Any extra package managers a child image installs (rustup, go, ruby, etc.) *add* to the runtime code-fetch surface noted under [Threat model](#threat-model) — they don't replace the existing `npx`/`pnpm dlx`/`uvx` primitives.
 
+## Troubleshooting
+
+### Files edited inside the container become `root`-owned on the host
+
+The container runs as `root` (uid 0); your host user is typically uid 1000. On a WSL2 / `drvfs` bind mount the filesystem records the **writer's** uid in per-file metadata, so any repo file you (or Claude) edit *from inside* the container lands as `root:root` on the host. Symptoms on the host afterwards:
+
+- the file is read-only to your user — edits/`git restore`/saves fail until you `sudo`;
+- `git` may refuse with `detected dubious ownership` when owner and caller uids disagree;
+- root-owned files quietly accumulate (`find . -printf '%u\n' | sort | uniq -c` to see the split).
+
+This is cosmetic to **git history** — git tracks the executable bit, not the owner uid, so commits/pushes are unaffected. It only bites host-side editing.
+
+**The fix must run on the host, not in the container.** The wrapper launches with `--cap-drop ALL` and adds back only `DAC_OVERRIDE`/`FOWNER`, *not* `CAP_CHOWN` — so `chown` from inside the container fails with `Operation not permitted` even as root. From the host (WSL) shell:
+
+```bash
+sudo chown -R "$(id -u):$(id -g)" <repo>     # whole repo, or
+sudo chown "$(id -u):$(id -g)" path/to/file  # just what was touched
+```
+
+**Prevention:** prefer editing repo files from the host. If you (or Claude) must edit inside the container, run the `sudo chown` above on the host afterward to regain write access. Note you can still `git commit`/`push` the root-owned tree from inside the container — the chown only restores *host-side* editability.
+
 ## Specs
 
 Behavioural requirements live in [`openspec/specs/`](openspec/specs/); change history in [`openspec/changes/archive/`](openspec/changes/archive/).
