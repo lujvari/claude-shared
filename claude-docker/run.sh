@@ -36,6 +36,13 @@ Wrapper flags:
                       volumes. No OAuth token, gh login, shell history, or
                       session history persists across runs.
   --ro                Mount every workspace read-only (review / audit mode).
+  --tools             Mount a workspace's top-level tools/ subdir read-WRITE.
+                      By default, a tools/ subdir swept in by a broad mount
+                      (e.g. mounting all of C:\dev) is overlaid read-only so a
+                      --yolo container can't rewrite host tooling — including
+                      this launcher itself — and have the host execute it on
+                      the next start. Pass --tools when you knowingly need to
+                      edit tooling from inside the container.
   --aws               Opt in to AWS: mount ~/.aws/config + ~/.aws/sso (:ro)
                       and forward AWS_PROFILE / AWS_REGION /
                       AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY /
@@ -119,6 +126,7 @@ WORKSPACES=()
 CLAUDE_FLAGS=()
 EPHEMERAL=0
 RO_WORKSPACES=0
+WITH_TOOLS_RW=0
 WITH_AWS=0
 WITH_GH=0
 WITH_GLAB=0
@@ -139,6 +147,7 @@ for arg in "$@"; do
     --yolo)         CLAUDE_FLAGS+=("--dangerously-skip-permissions") ;;
     --ephemeral)    EPHEMERAL=1 ;;
     --ro)           RO_WORKSPACES=1 ;;
+    --tools)        WITH_TOOLS_RW=1 ;;
     --aws)          WITH_AWS=1 ;;
     --gh)           WITH_GH=1 ;;
     --glab)         WITH_GLAB=1 ;;
@@ -192,6 +201,16 @@ for ws in "${WORKSPACES[@]}"; do
   SEEN_NAMES+=("$name")
   SEEN_PATHS+=("$abs")
   MOUNT_ARGS+=("-v" "$abs:/workspaces/$name$ws_suffix")
+  # Safeguard: a top-level tools/ subdir swept in by a broad workspace mount
+  # (e.g. mounting all of C:\dev) holds cross-cutting tooling — including this
+  # launcher. Overlay it read-only by default so an in-container (root, --yolo)
+  # process can't rewrite the host launch path and have the host execute it on
+  # the next start. Docker resolves the nested bind mount by path depth, so the
+  # :ro child wins over the rw parent for that subtree. --tools opts into rw;
+  # --ro already makes the parent (and thus this) read-only, so skip then.
+  if [ "$RO_WORKSPACES" != "1" ] && [ "$WITH_TOOLS_RW" != "1" ] && [ -d "$abs/tools" ]; then
+    MOUNT_ARGS+=("-v" "$abs/tools:/workspaces/$name/tools:ro")
+  fi
   CONTAINER_PATHS+=("/workspaces/$name")
 done
 CWD="${CONTAINER_PATHS[0]}"
