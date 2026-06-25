@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Directory holding this wrapper — used to locate wrapper-shipped assets
-# (e.g. hooks/) that get mounted into every container regardless of the
-# user's host ~/.claude config.
-WRAPPER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 # Real on-disk directory of this launcher, resolved through any symlinks (the
-# ~/bin/claude-docker launcher is typically a symlink into the repo). Used to
-# protect the launcher's own directory when a broad workspace mount sweeps it
-# in — see the read-only overlay in the workspace loop below.
+# ~/bin/claude-docker launcher is typically a symlink into the repo). Used both
+# to locate wrapper-shipped assets (e.g. hooks/) that get mounted into every
+# container regardless of the user's host ~/.claude config, AND to protect the
+# launcher's own directory when a broad workspace mount sweeps it in (see the
+# read-only overlay in the workspace loop below). Resolving the symlink is
+# load-bearing: a plain `dirname "${BASH_SOURCE[0]}"` yields the symlink's own
+# dir (e.g. ~/bin), so the wrapper-asset lookups below would silently find
+# nothing and the container would fall back to the host's ~/.claude hooks.
 self_src="${BASH_SOURCE[0]}"
 while [ -h "$self_src" ]; do
   self_ldir=$(cd -P "$(dirname "$self_src")" && pwd)
@@ -633,8 +633,8 @@ done
 # spawned by this wrapper gets them, independent of the user's host .claude
 # config. Activation still requires the user's settings.docker.json to wire
 # the hook commands into Claude's hook events.
-if [ -d "$WRAPPER_DIR/hooks" ]; then
-  cp -RL "$WRAPPER_DIR/hooks" "$stage/hooks"
+if [ -d "$SELF_DIR/hooks" ]; then
+  cp -RL "$SELF_DIR/hooks" "$stage/hooks"
   MOUNT_ARGS+=("-v" "$stage/hooks:/root/.claude/hooks:ro")
 fi
 if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
