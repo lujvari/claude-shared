@@ -26,7 +26,7 @@ debugging spike) without a human in the loop. So the guardrail must
 
 - **Add `hooks/session-worklog.py`** — a new hook, kept separate from
   `worktree-guard.py` so logging can never destabilise the stomp-guard.
-  Three modes:
+  Four modes:
   - `start` (SessionStart): record the cwd repo (if any) and its HEAD
     baseline into a per-session index `/tmp/claude-worklog-<sid>.json`.
   - `touch` (PostToolUse on Edit/Write): record the edited file's repo +
@@ -38,10 +38,22 @@ debugging spike) without a human in the loop. So the guardrail must
     repo), append one NDJSON record to
     `<repo>/.git/claude-sessions/worklog.ndjson` and warn to stderr when
     that repo's tree is dirty or commits are unpushed.
+  - `report` (SessionStart + PreToolUse on Edit/Write): the **deferred-warning
+    relay**. `SessionEnd`'s stderr warning is never displayed (the session
+    is ending), so this reads the repo's last `worklog.ndjson` record and, if
+    it was dirty/unpushed, re-emits the warning via the `additionalContext`
+    channel (empirically verified visible on both SessionStart and PreToolUse)
+    — the surface SessionEnd lacks. Repo is scoped to the cwd (SessionStart)
+    or the edited file's repo (PreToolUse), deduped once per repo per session
+    via a `/tmp` set. Read-only; no live git re-check (an accepted rare
+    stale-nag).
 - **Wire it in `examples/settings.docker.json`** — `SessionStart` →
-  `start`, `PostToolUse` Edit/Write → `touch`, and `SessionEnd` → `stop`
-  (added alongside `worktree-guard.py`). Deliberately NOT on `Stop`
-  (per-turn), so there is one record per real session, not one per turn.
+  `start` + `report`, `PreToolUse` Edit/Write → `report`, `PostToolUse`
+  Edit/Write → `touch`, and `SessionEnd` → `stop` (added alongside
+  `worktree-guard.py`). Deliberately NOT on `Stop` (per-turn), so there is
+  one record per real session, not one per turn. **Every wired command is
+  `[ -f … ]`-guarded** so a missing hook file no-ops (exit 0) instead of a
+  `python3` "no such file" exit-2 that would *block* the tool.
 - **Document it in README** under a new "Session work log" subsection.
 
 Strictly observational. The hook NEVER commits, pushes, stashes,

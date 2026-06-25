@@ -54,6 +54,24 @@ The `session-worklog` hook SHALL NOT commit, push, stash, prune, clean, reset, o
 - **WHEN** `session-worklog stop` runs on `SessionEnd`
 - **THEN** the working tree, the index, the branch refs, and the commit graph are byte-for-byte unchanged afterwards (only the work-log file and stderr are written)
 
+### Requirement: A deferred warning is surfaced on the next session
+
+Because `SessionEnd` output is never displayed, the warning it computes would otherwise go unseen. The hook SHALL provide a `report` mode that re-surfaces it. When run for a repository (the working-directory repo on `SessionStart`, or the edited file's repo on `PreToolUse`), `report` SHALL read that repository's last `worklog.ndjson` record and, when that record was dirty or had unpushed commits, emit a human-readable warning via the hook `additionalContext` output channel (which is visible on `SessionStart` and `PreToolUse`). It SHALL emit at most once per repository per session. It SHALL NOT run any mutating git command and SHALL NOT re-check live git state (so a warning the user resolved without ending a session MAY surface once). When the event is not scoped to a repository (e.g. the working directory is a non-repo parent and no file is being edited), `report` SHALL emit nothing.
+
+#### Scenario: A subrepo edited from a non-repo parent surfaces its prior warning
+
+- **GIVEN** a repository whose last `worklog.ndjson` record was left dirty by an earlier session
+- **AND** the current session's working directory is a non-repo parent (e.g. `/workspaces/dev`)
+- **WHEN** the session first edits a file inside that repository (PreToolUse `report`)
+- **THEN** a warning naming the repository, branch, and outstanding counts is emitted via `additionalContext`
+- **AND** a second edit in the same repository in the same session emits nothing (deduped)
+
+#### Scenario: A clean repo surfaces nothing
+
+- **GIVEN** a repository whose last `worklog.ndjson` record was clean (no uncommitted/untracked/unpushed)
+- **WHEN** `report` runs for that repository
+- **THEN** nothing is emitted
+
 ### Requirement: No secret material is logged
 
 The per-session record SHALL describe changes only as file paths and line counts (via `git diff --stat`); it SHALL NOT include file contents or diff hunks. This keeps secret values that may sit in changed files out of the shared, multi-container work log.

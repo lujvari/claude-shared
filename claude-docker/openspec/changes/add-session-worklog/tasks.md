@@ -6,12 +6,14 @@
 - [x] 1.4 `stop`: for every repo in the index (plus the end-cwd repo when it is a repo), append one NDJSON record to `<repo>/.git/claude-sessions/worklog.ndjson` with sid, branch, end HEAD, uncommitted/untracked counts, ahead/behind; add start HEAD + `commits_this_session` + `diff --stat` summary when a baseline HEAD was captured.
 - [x] 1.5 On `SessionEnd`, warn to stderr per repo when its tree is dirty or commits are unpushed; stay silent on a clean, pushed tree.
 - [x] 1.6 `diff --stat` only (paths + counts, never content); wrap everything so any error is swallowed to stderr and the hook exits zero; remove the index on `SessionEnd`.
+- [x] 1.7 **`report` mode (deferred-warning relay):** resolve the repo from the edited file (`PreToolUse`) or cwd (`SessionStart`); dedup once per repo per session via `/tmp/claude-worklog-reported-<sid>.json`; read the repo's last `worklog.ndjson` record; if dirty/unpushed, emit the warning via `additionalContext` JSON (the only stdout). Read-only, no live git re-check. Smoke-tested: dirty→nags once then deduped; PreToolUse from a non-repo parent nags the edited subrepo; clean→silent; non-repo→silent.
 
 ## 2. Wiring
 
 - [x] 2.1 `examples/settings.docker.json`: add a `SessionStart` block running `session-worklog.py start`, guarded by `[ -f /root/.claude/hooks/session-worklog.py ]`.
 - [x] 2.2 `examples/settings.docker.json`: add a second `PostToolUse` Edit/Write hook entry running `session-worklog.py touch`, alongside `worktree-guard.py touch`.
 - [x] 2.3 `examples/settings.docker.json`: add a second `SessionEnd` hook entry running `session-worklog.py stop`, alongside `worktree-guard.py stop`. Do NOT wire it on `Stop` (avoid a record per turn).
+- [x] 2.6 `examples/settings.docker.json`: wire `report` on `SessionStart` (after `start`) and on `PreToolUse` Edit/Write (after the guard `check`). **All commands `[ -f … ]`-guarded** — a probe with an unguarded missing-file command was found to exit 2 and *block* the tool (caught live), so the guard is load-bearing, not cosmetic.
 - [x] 2.4 Confirm the new hook ships into the container via the `run.sh` mount of `hooks/` at `/root/.claude/hooks:ro`.
 - [x] 2.5 **Prerequisite run.sh bugfix:** the hooks-mount block used the unresolved `WRAPPER_DIR` (`dirname "${BASH_SOURCE[0]}"`), which for a `~/bin/claude-docker` *symlink* launch resolves to `~/bin` (no `hooks/`), silently skipping the mount so the container fell back to the host's `~/.claude/hooks`. Switched the block to the already-symlink-resolved `SELF_DIR` and removed the dead `WRAPPER_DIR`. This affected ALL wrapper-shipped hooks (worktree-guard too), not just session-worklog. Verified by simulating a symlink launch.
 

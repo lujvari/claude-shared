@@ -189,7 +189,7 @@ def _warn(rec: dict) -> None:
     sys.stderr.write(
         f"session-worklog: ending in {rec['repo']} on '{rec['branch']}' with "
         + "; ".join(parts)
-        + ".\nCommit / push / stash before it's forgotten — the work is safe in "
+        + ".\nCommit / push / stash before it's forgotten; the work is safe in "
         + "the tree, but nothing else will flag it.\n"
     )
 
@@ -228,10 +228,109 @@ def handle_stop(ev: dict) -> int:
     return 0
 
 
+def _reported_path(my_sid: str) -> Path:
+    """Per-session set of repos already nagged about (dedup: once per repo)."""
+    return Path(f"/tmp/claude-worklog-reported-{my_sid}.json")
+
+
+def _load_reported(p: Path) -> set:
+    if p.exists():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, list):
+                return set(data)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return set()
+
+
+def _last_record(log: Path) -> dict | None:
+    """Last NDJSON record in a worklog file, or None."""
+    try:
+        lines = [ln for ln in log.read_text().splitlines() if ln.strip()]
+    except OSError:
+        return None
+    for ln in reversed(lines):
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict):
+            return rec
+    return None
+
+
+def handle_report(ev: dict) -> int:
+    """Surface the PREVIOUS session's unshown dirty/unpushed warning for the
+    repo this event lands in — the cwd repo on SessionStart, or the edited
+    file's repo on PreToolUse. Once per repo per session.
+
+    Read-only: it reads the repo's worklog.ndjson (written by a prior session's
+    SessionEnd) and, if that last record was dirty/unpushed, emits the warning
+    via the additionalContext channel (verified visible on SessionStart and
+    PreToolUse) — the surface SessionEnd never had. It does NOT re-check live
+    git state (that would drag git into the hot path), so a warning the user
+    has since resolved without ending a session may nag once — an accepted
+    trade. The additionalContext JSON must be the only thing on stdout.
+    """
+    tin = ev.get("tool_input") or {}
+    target = (
+        tin.get("file_path") or tin.get("path") or tin.get("notebook_path")
+        or ev.get("cwd") or os.getcwd()
+    )
+    paths = repo_paths(target)
+    if not paths:
+        return 0  # not in a repo (e.g. the /workspaces/dev parent) — skip per design
+    top, common = paths
+
+    rp = _reported_path(sid(ev))
+    reported = _load_reported(rp)
+    if top in reported:
+        return 0
+    reported.add(top)
+    try:
+        rp.write_text(json.dumps(sorted(reported)))
+    except OSError:
+        pass
+
+    rec = _last_record(Path(common) / "claude-sessions" / "worklog.ndjson")
+    if not rec:
+        return 0
+    dirty = int(rec.get("dirty_tracked") or 0)
+    untracked = int(rec.get("untracked") or 0)
+    ahead = int(rec.get("ahead") or 0)
+    if not (dirty or untracked or ahead):
+        return 0  # last session left it clean — nothing to nag about
+
+    when = ""
+    ts = rec.get("ts")
+    if isinstance(ts, (int, float)):
+        when = time.strftime(" (%Y-%m-%d %H:%M)", time.localtime(ts))
+    bits = []
+    if dirty or untracked:
+        bits.append(f"{dirty} uncommitted + {untracked} untracked file(s)")
+    if ahead:
+        bits.append(f"{ahead} commit(s) not pushed")
+    msg = (
+        f"[session-worklog] A previous session{when} ended in {top} on "
+        f"'{rec.get('branch')}' with " + "; ".join(bits)
+        + ". This may be unfinished work that was never shown live (SessionEnd "
+        "has no console); surface it to the user so it isn't forgotten."
+    )
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": ev.get("hook_event_name") or "SessionStart",
+            "additionalContext": msg,
+        }
+    }))
+    return 0
+
+
 HANDLERS = {
     "start": handle_start,
     "touch": handle_touch,
     "stop": handle_stop,
+    "report": handle_report,
 }
 
 
