@@ -246,21 +246,21 @@ This is distinct from the user-managed feature worktrees in [Git worktrees](#git
 
 ## Session work log (session-worklog)
 
-`hooks/session-worklog.py` records what each session did and warns when a session ends with work left behind. It exists to close a specific failure: finished-but-uncommitted work that survives in the bind-mounted tree but goes *unnoticed* across a context reset, because nothing flags it. Wire it through `settings.docker.json` — [`examples/settings.docker.json`](examples/settings.docker.json) ships the block (`SessionStart` → `start`, `SessionEnd` → `stop`).
+`hooks/session-worklog.py` records what each session did and warns when a session ends with work left behind. It exists to close a specific failure: finished-but-uncommitted work that survives in the bind-mounted tree but goes *unnoticed* across a context reset, because nothing flags it. Wire it through `settings.docker.json` — [`examples/settings.docker.json`](examples/settings.docker.json) ships the block (`SessionStart` → `start`, `PostToolUse` Edit/Write → `touch`, `SessionEnd` → `stop`).
 
 It is **strictly observational**. It reads git state and appends a record; it never commits, pushes, stashes, prunes, cleans, resets, or removes anything. (Cleanup/reaping is worktree-guard's job, and only for clean, already-landed worktrees.)
 
 How it works:
 
-- `SessionStart` stamps `{sid, repo, head, ts}` to `/tmp/claude-worklog-<sid>.json` so the end handler can compute the session's commit delta.
+- Repos are discovered by **edit location**, not by the session's working directory. A `PostToolUse` `touch` records the repo of each edited file (with its HEAD at first sighting, as the session baseline) into a per-session index `/tmp/claude-worklog-<sid>.json`. This is load-bearing: sessions often run from a multi-repo parent like `/workspaces/dev` (which is *not itself a repo*) and edit several subrepos — keying on cwd alone would catch none of them. `SessionStart` and the end cwd are also folded in when they happen to be repos.
 - `SessionEnd` appends one NDJSON line per touched repo to `<repo>/.git/claude-sessions/worklog.ndjson` (the same shared `.git` dir worktree-guard uses, so it's visible across containers and never committed): session id, branch, start→end HEAD, commits made this session, `git diff --stat` (filenames + line counts only — **never diff content**, so no secret values are logged), uncommitted/untracked counts, and ahead/behind vs upstream.
-- On `SessionEnd` it also **warns to stderr** when the tree is dirty or commits are unpushed — e.g. `ending in <repo> on 'main' with 3 uncommitted + 1 untracked file(s); 2 commit(s) not pushed`.
+- On `SessionEnd` it also **warns to stderr**, once per touched repo, when that repo's tree is dirty or has commits not pushed — e.g. `ending in <repo> on 'main' with 3 uncommitted + 1 untracked file(s); 2 commit(s) not pushed`.
 
 Scope and deliberate omissions:
 
-- Wired on `SessionEnd` only, **not** `Stop`, so a normal turn-end doesn't append a log line; you get one record per real session.
-- Tracks the repo at session start and at session end (the common single-repo case). Mid-session hops to *other* repos beyond those two are not recorded — the hook only fires at start/end, not per edit.
-- No `git fsck` / dangling-commit scan: too slow to run on every session end over a 9p bind mount, and that clutter auto-expires. The high-value, low-cost signals are an uncommitted tree and unpushed commits.
+- The log line is written on `SessionEnd` only, **not** per turn — you get one record per real session, per repo it touched.
+- Only repos the session actually *edited* (via Edit/Write/MultiEdit/NotebookEdit) or sat in at start/end are tracked. A repo changed only through a `Bash`-driven `git`/editor command, in a directory the session never cd'd into, is not seen.
+- No `git fsck` / dangling-commit scan: too slow to run on a 9p bind mount, and that clutter auto-expires. The high-value, low-cost signals are an uncommitted tree and unpushed commits.
 
 ## Pasting images
 

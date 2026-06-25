@@ -45,6 +45,10 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py touch; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py touch; fi"
           }
         ]
       }

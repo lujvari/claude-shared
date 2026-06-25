@@ -26,18 +26,22 @@ debugging spike) without a human in the loop. So the guardrail must
 
 - **Add `hooks/session-worklog.py`** — a new hook, kept separate from
   `worktree-guard.py` so logging can never destabilise the stomp-guard.
-  Two modes:
-  - `start` (SessionStart): stamp `{sid, repo, head, ts}` to
-    `/tmp/claude-worklog-<sid>.json` so the end handler can compute the
-    session's commit delta.
-  - `stop` (SessionEnd): for each repo the session is known to have
-    touched, append one NDJSON record to
-    `<repo>/.git/claude-sessions/worklog.ndjson` and, on `SessionEnd`,
-    warn to stderr when the tree is dirty or commits are unpushed.
+  Three modes:
+  - `start` (SessionStart): record the cwd repo (if any) and its HEAD
+    baseline into a per-session index `/tmp/claude-worklog-<sid>.json`.
+  - `touch` (PostToolUse on Edit/Write): record the edited file's repo +
+    HEAD baseline on first sighting. This is how repos are discovered —
+    sessions commonly run from a multi-repo parent (e.g.
+    `/workspaces/dev`, not itself a repo) and edit several subrepos, so
+    keying on cwd alone would catch none of them.
+  - `stop` (SessionEnd): for each repo in the index (plus the end cwd
+    repo), append one NDJSON record to
+    `<repo>/.git/claude-sessions/worklog.ndjson` and warn to stderr when
+    that repo's tree is dirty or commits are unpushed.
 - **Wire it in `examples/settings.docker.json`** — `SessionStart` →
-  `start`, and add `stop` to the existing `SessionEnd` block alongside
-  `worktree-guard.py`. Deliberately NOT on `Stop` (per-turn), so there
-  is one record per real session, not one per turn.
+  `start`, `PostToolUse` Edit/Write → `touch`, and `SessionEnd` → `stop`
+  (added alongside `worktree-guard.py`). Deliberately NOT on `Stop`
+  (per-turn), so there is one record per real session, not one per turn.
 - **Document it in README** under a new "Session work log" subsection.
 
 Strictly observational. The hook NEVER commits, pushes, stashes,
@@ -51,9 +55,10 @@ Out of scope (deliberately):
   session end over a 9p bind mount, and that clutter auto-expires;
   uncommitted-tree + unpushed-commits are the high-value, low-cost
   signals.
-- Mid-session repo hops. The hook fires only at start and end, so it
-  records the start-stamp repo and the end-cwd repo; repos touched only
-  in between are not tracked.
+- Repos changed only through a `Bash`-driven `git`/editor command in a
+  directory the session never edited a file in or cd'd into. Discovery
+  is by Edit/Write `touch` plus the start/end cwd; a repo touched by
+  neither is not seen.
 - Worktree reaping / old-session cleanup. That already exists in
   `worktree-guard.py` (clean + merged + no-live-heartbeat) and is not
   duplicated here.
@@ -63,9 +68,10 @@ Out of scope (deliberately):
 ### New Capabilities
 
 - `session-worklog`: per-session, append-only work logging plus a
-  dirty/unpushed-exit warning, driven by `SessionStart`/`SessionEnd`
-  hooks. Purely observational — reads git state, writes a log line and
-  a stderr warning, mutates nothing.
+  dirty/unpushed-exit warning, driven by `SessionStart` + `PostToolUse`
+  (edit-location discovery) + `SessionEnd` hooks. Purely observational —
+  reads git state, writes a log line and a stderr warning, mutates
+  nothing.
 
 ### Modified Capabilities
 
@@ -80,9 +86,10 @@ behaviour.
   helper shape). It ships into every container via the existing
   `run.sh:638` mount of `hooks/` at `/root/.claude/hooks:ro`.
 - **Config**: `claude-docker/examples/settings.docker.json` gains a
-  `SessionStart` block and a second `SessionEnd` hook entry. Users who
-  maintain their own `~/.claude/settings.docker.json` seed copy the new
-  block over from the example.
+  `SessionStart` block, a second `PostToolUse` Edit/Write hook entry,
+  and a second `SessionEnd` hook entry. Users who maintain their own
+  `~/.claude/settings.docker.json` seed copy the new blocks over from
+  the example.
 - **Docs**: `claude-docker/README.md` gains a "Session work log"
   subsection; `.gitignore` gains `__pycache__/`.
 - **No breaking changes.** The example settings guard each hook with

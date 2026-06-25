@@ -12,21 +12,28 @@ commits now leaves a visible warning plus an audit record, instead of silence.
 (The work always survived in the bind-mounted tree — the failure was that
 nothing flagged it.)
 
+Repos are discovered by **edit location**, not by the session's working
+directory: a `PostToolUse` `touch` records the repo of each edited file into a
+per-session index. This matters because sessions commonly run from a
+multi-repo parent (e.g. `/workspaces/dev`, which is not itself a repo) and edit
+several subrepos — keying on cwd alone would see none of them. The session's
+start cwd and end cwd are also folded in when they are repos.
+
 Records land one NDJSON line per touched repo in:
     <repo>/.git/claude-sessions/worklog.ndjson
 shared across containers via the bind-mounted .git, never committed (it sits
 inside .git). The directory is shared with worktree-guard's session registry.
 
 Dispatch via argv[1]:
-  start   SessionStart — stamp {sid, repo, head, ts} to /tmp so `stop` can
-          compute the session's commit delta.
-  stop    SessionEnd — for each repo this session is known to have touched,
-          append a work record and (on SessionEnd) warn on dirty/unpushed
-          state.
+  start   SessionStart — record the cwd repo (if any) and its HEAD baseline.
+  touch   PostToolUse on Edit/Write — record the edited file's repo + HEAD
+          baseline on first sighting; cheap and idempotent thereafter.
+  stop    SessionEnd — for every repo the session touched (plus the end cwd
+          repo), append a work record and warn on dirty/unpushed state.
 
 Deliberately cheap: no `git fsck`. Dangling-commit scanning is too slow to run
-on every session end over a 9p bind mount, and that clutter auto-expires; the
-high-value, low-cost signals are uncommitted tree + unpushed commits.
+on a 9p bind mount, and that clutter auto-expires; the high-value, low-cost
+signals are an uncommitted tree and unpushed commits.
 """
 
 import json
@@ -68,25 +75,50 @@ def repo_paths(path: str) -> tuple[str, str] | None:
     return top, common
 
 
-def stamp_path(my_sid: str) -> Path:
+def idx_path(my_sid: str) -> Path:
+    """Per-session index of touched repos: {top: {common, start_head}}."""
     return Path(f"/tmp/claude-worklog-{my_sid}.json")
 
 
-def handle_start(ev: dict) -> int:
-    cwd = ev.get("cwd") or os.getcwd()
-    paths = repo_paths(cwd)
+def _load_idx(p: Path) -> dict:
+    if p.exists():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _remember(my_sid: str, path: str) -> None:
+    """Record the repo containing `path` (with its current HEAD as the session
+    baseline) on first sighting. Idempotent: a repo already in the index keeps
+    its original baseline."""
+    paths = repo_paths(path)
     if not paths:
-        return 0
-    top, _common = paths
-    try:
-        stamp_path(sid(ev)).write_text(json.dumps({
-            "sid": sid(ev),
-            "repo": top,
-            "start_head": git(top, "rev-parse", "HEAD") or "",
-            "start_ts": time.time(),
-        }))
-    except OSError:
-        pass
+        return
+    top, common = paths
+    p = idx_path(my_sid)
+    idx = _load_idx(p)
+    if top not in idx:
+        idx[top] = {"common": common, "start_head": git(top, "rev-parse", "HEAD") or ""}
+        try:
+            p.write_text(json.dumps(idx))
+        except OSError:
+            pass
+
+
+def handle_start(ev: dict) -> int:
+    _remember(sid(ev), ev.get("cwd") or os.getcwd())
+    return 0
+
+
+def handle_touch(ev: dict) -> int:
+    tin = ev.get("tool_input") or {}
+    target = tin.get("file_path") or tin.get("path") or tin.get("notebook_path")
+    if target:
+        _remember(sid(ev), target)
     return 0
 
 
@@ -110,15 +142,14 @@ def _ahead_behind(top: str) -> tuple[int, int] | None:
     if not out:
         return None
     try:
-        # --left-right with `@{u}...HEAD`: left = upstream-only (behind),
-        # right = HEAD-only (ahead).
+        # `@{u}...HEAD`: left = upstream-only (behind), right = HEAD-only (ahead).
         behind, ahead = (int(x) for x in out.split())
     except ValueError:
         return None
     return ahead, behind
 
 
-def _record_for(top: str, ev: dict, stamp: dict | None) -> dict:
+def _record_for(top: str, start_head: str, ev: dict) -> dict:
     head = git(top, "rev-parse", "HEAD") or ""
     tracked, untracked = _porcelain_counts(top)
     ab = _ahead_behind(top)
@@ -134,14 +165,13 @@ def _record_for(top: str, ev: dict, stamp: dict | None) -> dict:
         "ahead": ab[0] if ab else None,
         "behind": ab[1] if ab else None,
     }
-    if stamp and stamp.get("repo") == top and stamp.get("start_head"):
-        start = stamp["start_head"]
-        rec["start_head"] = start[:12]
-        cnt = git(top, "rev-list", "--count", f"{start}..HEAD")
+    if start_head:
+        rec["start_head"] = start_head[:12]
+        cnt = git(top, "rev-list", "--count", f"{start_head}..HEAD")
         rec["commits_this_session"] = int(cnt) if cnt and cnt.isdigit() else None
         # `diff --stat` is filenames + line counts only (never content), so it
         # is safe to log — no secret values land in the work log.
-        stat = git(top, "diff", "--stat", f"{start}..HEAD")
+        stat = git(top, "diff", "--stat", f"{start_head}..HEAD")
         rec["session_diffstat"] = stat.splitlines()[-1].strip() if stat else ""
     return rec
 
@@ -165,42 +195,34 @@ def _warn(rec: dict) -> None:
 
 
 def handle_stop(ev: dict) -> int:
-    sp = stamp_path(sid(ev))
-    stamp = None
-    if sp.exists():
-        try:
-            stamp = json.loads(sp.read_text())
-        except (json.JSONDecodeError, OSError):
-            stamp = None
+    my_sid = sid(ev)
+    p = idx_path(my_sid)
+    idx = _load_idx(p)
 
-    # Repos this session is known to have touched: the start-stamp repo and
-    # the end cwd's repo (usually the same). Single-repo is the common case;
-    # mid-session hops to other repos beyond these two are not tracked, by
-    # design (this hook only fires at start/end, not per edit).
-    repos: dict[str, str] = {}  # top -> common
-    for cand in (stamp.get("repo") if stamp else None, ev.get("cwd") or os.getcwd()):
-        if not cand:
-            continue
-        paths = repo_paths(cand)
-        if paths:
-            repos[paths[0]] = paths[1]
+    # Fold in the end-of-session cwd repo (covers a session that only ran git
+    # via Bash and never triggered an Edit/Write touch).
+    end = repo_paths(ev.get("cwd") or os.getcwd())
+    if end and end[0] not in idx:
+        idx[end[0]] = {"common": end[1], "start_head": ""}
 
     is_end = ev.get("hook_event_name") == "SessionEnd"
-    for top, common in repos.items():
-        rec = _record_for(top, ev, stamp)
-        reg = Path(common) / "claude-sessions"
-        try:
-            reg.mkdir(parents=True, exist_ok=True)
-            with (reg / "worklog.ndjson").open("a") as f:
-                f.write(json.dumps(rec) + "\n")
-        except OSError as e:
-            sys.stderr.write(f"session-worklog: could not write log: {e}\n")
+    for top, meta in idx.items():
+        common = meta.get("common") or ""
+        rec = _record_for(top, meta.get("start_head") or "", ev)
+        if common:
+            reg = Path(common) / "claude-sessions"
+            try:
+                reg.mkdir(parents=True, exist_ok=True)
+                with (reg / "worklog.ndjson").open("a") as f:
+                    f.write(json.dumps(rec) + "\n")
+            except OSError as e:
+                sys.stderr.write(f"session-worklog: could not write log: {e}\n")
         if is_end:
             _warn(rec)
 
     if is_end:
         try:
-            sp.unlink()
+            p.unlink()
         except OSError:
             pass
     return 0
@@ -208,6 +230,7 @@ def handle_stop(ev: dict) -> int:
 
 HANDLERS = {
     "start": handle_start,
+    "touch": handle_touch,
     "stop": handle_stop,
 }
 
