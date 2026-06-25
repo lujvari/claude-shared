@@ -8,6 +8,16 @@
   "model": "opus[1m]",
   "teammateMode": "tmux",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py start; fi"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
@@ -45,6 +55,10 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py stop; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py stop; fi"
           }
         ]
       }
