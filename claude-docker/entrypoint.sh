@@ -35,6 +35,36 @@ if [ -x /opt/claude-code/claude ]; then
   ln -sf /opt/claude-code/claude /root/.local/bin/claude
 fi
 
+# --aws static credentials → named profile in ~/.aws/credentials.
+# run.sh hands static IAM keys to the container under CLAUDE_DOCKER_AWS_STATIC_*
+# transport vars (NOT as ambient AWS_ACCESS_KEY_ID, which would outrank the
+# mounted SSO profile and any --profile-less call). Materialize them here under
+# a named profile so tenants are selected explicitly with --profile and there
+# is no silent default identity. ~/.aws/config is bind-mounted :ro; the parent
+# dir and ~/.aws/credentials are ours to write (run.sh never mounts creds).
+# Transport vars are unset afterwards so the secret does not linger in the
+# environment `exec`'d into claude.
+if [ -n "${CLAUDE_DOCKER_AWS_STATIC_KEY_ID:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_AWS_STATIC_SECRET:-}" ]; then
+  aws_profile="${CLAUDE_DOCKER_AWS_STATIC_PROFILE:-aegon}"
+  mkdir -p /root/.aws
+  {
+    printf '[%s]\n' "$aws_profile"
+    printf 'aws_access_key_id = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_KEY_ID"
+    printf 'aws_secret_access_key = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_SECRET"
+    if [ -n "${CLAUDE_DOCKER_AWS_STATIC_TOKEN:-}" ]; then
+      printf 'aws_session_token = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_TOKEN"
+    fi
+    if [ -n "${CLAUDE_DOCKER_AWS_STATIC_REGION:-}" ]; then
+      printf 'region = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_REGION"
+    fi
+  } > /root/.aws/credentials
+  chmod 600 /root/.aws/credentials
+fi
+unset CLAUDE_DOCKER_AWS_STATIC_KEY_ID CLAUDE_DOCKER_AWS_STATIC_SECRET \
+      CLAUDE_DOCKER_AWS_STATIC_TOKEN CLAUDE_DOCKER_AWS_STATIC_REGION \
+      CLAUDE_DOCKER_AWS_STATIC_PROFILE 2>/dev/null || true
+
 # Inject a git credential helper for each host in a CSV list. The helper
 # runs at auth time and reads the token from the named env var, so the
 # secret is supplied during the HTTPS handshake and never appears in a URL
