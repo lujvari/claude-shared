@@ -109,6 +109,22 @@ Wrapper flags:
                       read/write your real Claude credential — a prompt-
                       injected workspace file could exfiltrate it. Off by
                       default. Env: CLAUDE_DOCKER_CONFIG_DIR sets the source.
+  --host-net          Run the container on the HOST network namespace
+                      (docker run --network host) instead of the default
+                      bridge. Needed when a corporate VPN lowers the host
+                      uplink MTU below Docker's bridge MTU (1500): Docker
+                      Desktop's bridge/NAT egress ignores the container/bridge
+                      MTU and silently drops oversized TLS handshake packets,
+                      which surfaces as a bogus API certificate/connection
+                      error ("UNKNOWN_CERTIFICATE_VERIFICATION_ERROR") even
+                      though the Claude login is valid. Host networking uses
+                      the host uplink (correct MTU) directly and sidesteps it.
+                      Trade-off: the container loses network isolation — it can
+                      reach host localhost/LAN services (with WSL2 mirrored
+                      networking, that is the Windows localhost). The
+                      filesystem sandbox, dropped caps, and no-new-privileges
+                      are unchanged. Off by default. Env: CLAUDE_DOCKER_NETWORK
+                      (set to any docker network name, e.g. "host").
   --iterm             Wrap claude in tmux -CC (iTerm2 control mode → native
                       panes). Equivalent to CLAUDE_DOCKER_TMUX=cc.
   --tmux              Wrap claude in plain tmux (works in any terminal).
@@ -162,6 +178,7 @@ WITH_TOFU=0
 WITH_ADO=0
 WITH_JIRA=0
 WITH_CLAUDE_AUTH=0
+NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
 for arg in "$@"; do
@@ -183,6 +200,7 @@ for arg in "$@"; do
     --ado)          WITH_ADO=1 ;;
     --jira)         WITH_JIRA=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
+    --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
@@ -761,6 +779,7 @@ DOCKER_FLAGS=()
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
+[ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
 [ "$RO_WORKSPACES" = "1" ] && DOCKER_FLAGS+=("ro")
 if [ "${#DOCKER_FLAGS[@]}" -gt 0 ]; then
@@ -911,6 +930,16 @@ if [ "$EPHEMERAL" = "0" ]; then
   [ "$WITH_TFE" = "0" ] && [ "$WITH_TOFU" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/root/.terraform.d")
   MOUNT_ARGS=(-v claude-code-root:/root -v claude-code-home:/root/.claude "${MOUNT_ARGS[@]}")
 fi
+
+# --host-net / CLAUDE_DOCKER_NETWORK: join the given docker network (typically
+# "host") instead of the default bridge. Required on corporate networks where a
+# VPN lowers the host uplink MTU below Docker's bridge MTU (1500): Docker
+# Desktop's bridge/NAT egress ignores the container/bridge MTU and drops
+# oversized TLS handshake packets, which surfaces as a bogus API
+# certificate/connection error. Appended to MOUNT_ARGS — already a general
+# docker-run-options array (it carries the --tmpfs masks), so the always-
+# non-empty expansion below stays bash-3.2 / set -u safe.
+[ -n "$NETWORK" ] && MOUNT_ARGS+=("--network" "$NETWORK")
 
 docker run --rm -it \
   --security-opt no-new-privileges \
