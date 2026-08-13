@@ -38,6 +38,22 @@ ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
 ARG ANDROID_CMDLINE_TOOLS_SHA256=2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
 ARG GRADLE_VERSION=8.10
 ARG GRADLE_SHA256=5b9c5eb3f9fc2c94abaea57d90bd78747ca117ddbbf96c859d3741181a12bf2a
+# Flutter — pinned stable. The official versioned tarball is x86_64-ONLY (Flutter
+# ships no arm64 Linux archive), so the sha pins only that arch; aarch64 falls
+# back to a git clone at the same tag (see the Flutter block below). Bump with:
+#   curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json \
+#     | jq -r '.releases[] | select(.version=="'"$FLUTTER_VERSION"'" and .channel=="stable") | .sha256'
+# 3.44.9 ships Dart 3.12.2 (RingRecipe's supabase_flutter ^2.5 floors Dart 3.3).
+ARG FLUTTER_VERSION=3.44.9
+ARG FLUTTER_SHA256_X86_64=a9120fa4a01048bdef438ddc3a2d4b7389662ea98a95db86eeaf10382bc4efcb
+# Chrome for Testing — headless browser for `flutter test --platform chrome` and
+# web runs. Ubuntu 26.04 ships no usable `chromium` (the archive package is a
+# snap-transitional that needs snapd), and `google-chrome-stable` drags in
+# systemd-sysv/wget/perl; the CfT tarball is a lean, pinnable, snap-free build.
+# x86_64-only (Google publishes no arm64 CfT Linux build). Bump + get the sha:
+#   V=<ver>; curl -fsSL https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chrome-linux64.zip | sha256sum
+ARG CHROME_FOR_TESTING_VERSION=151.0.7922.77
+ARG CHROME_FOR_TESTING_SHA256_X86_64=60a324a6e1d27b20f2035a2cdaf71641a739fe1f5571f63794773225820bce8a
 
 # Make apt runnable under --cap-drop ALL at runtime. Two pieces:
 #  1. APT::Sandbox::User "root" stops the http method from setgroups()→_apt
@@ -72,6 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       less \
       openssh-client \
       unzip \
+      xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI (keyring fetched at build; TODO: commit the keyring to the repo)
@@ -285,6 +302,84 @@ RUN curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-
       "build-tools;34.0.0" > /dev/null
 
 ENV PATH=${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:/opt/gradle-${GRADLE_VERSION}/bin:${PATH}
+
+# Flutter SDK (web-first). x86_64 uses the pinned, checksum-verified stable
+# tarball (.tar.xz — hence the xz-utils in the base apt block); aarch64 falls
+# back to a shallow git clone at the same tag, since Flutter publishes no arm64
+# Linux tarball. Installed under /opt so the claude-code-root named volume
+# doesn't mask it at runtime (same rationale as tfenv/gradle/android-sdk).
+# safe.directory is set --system (persists in /etc/gitconfig; a /root/.gitconfig
+# entry would be masked by the volume) so Flutter's internal git calls — it reads
+# its own version from the SDK's git checkout, so .git must stay — never trip
+# dubious-ownership. We enable web (default-on in 3.x, so it survives the masked
+# /root config) and `precache --web --universal` at BUILD so a fresh,
+# egress-limited sandbox never downloads engine artifacts at first run, then
+# prune the android/ios engine artifacts the stable tarball bundles (~0.8 GB):
+# this image is web-first and the bundled Android toolchain is a bonus, not a
+# target.
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64) \
+        curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+          -o /tmp/flutter.tar.xz \
+     && echo "${FLUTTER_SHA256_X86_64}  /tmp/flutter.tar.xz" | sha256sum -c - \
+     && tar -xJf /tmp/flutter.tar.xz -C /opt \
+     && rm /tmp/flutter.tar.xz ;; \
+      aarch64) \
+        git clone --depth 1 --branch "${FLUTTER_VERSION}" \
+          https://github.com/flutter/flutter.git /opt/flutter ;; \
+      *) echo "Unsupported arch for flutter: $ARCH" >&2; exit 1 ;; \
+    esac \
+ && git config --system --add safe.directory /opt/flutter \
+ && /opt/flutter/bin/flutter config --no-analytics --enable-web > /dev/null \
+ && /opt/flutter/bin/flutter precache --web --universal \
+ && rm -rf /opt/flutter/bin/cache/artifacts/engine/android-* \
+           /opt/flutter/bin/cache/artifacts/engine/ios*
+
+# Chrome runtime libraries for the headless Chrome for Testing binary below.
+# Exactly the shared objects `ldd chrome` reports as NEEDED, plus libnss3/libnspr4
+# (Chrome dlopens NSS, so ldd misses them) and fonts-liberation so headless
+# rendering has a font. --no-install-recommends keeps it to the closure; far
+# leaner than google-chrome-stable, which also pulls systemd-sysv/wget/perl.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
+      libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 \
+      libcairo2 libcups2t64 libdbus-1-3 libgbm1 libglib2.0-0t64 \
+      libpango-1.0-0 libxcb1 libxkbcommon0 libnss3 libnspr4 fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+
+# Chrome for Testing — pinned + sha256 verify; x86_64-only (Google ships no
+# arm64 CfT Linux build), so on other arches we skip it and `flutter build web`
+# still works — only the browser-device test/run path is unavailable there.
+# Installed under /opt so the claude-code-root named volume doesn't mask it.
+# CHROME_EXECUTABLE (set in the ENV below) points at a wrapper that forces
+# --no-sandbox: the container runs as root under --cap-drop ALL, where Chrome's
+# namespace sandbox can't initialise; --no-sandbox is safe because the container
+# itself is the security boundary (IS_SANDBOX=1 + no-new-privileges).
+RUN set -e; ARCH=$(uname -m); \
+    if [ "$ARCH" = x86_64 ]; then \
+      curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-linux64.zip" \
+        -o /tmp/chrome.zip \
+   && echo "${CHROME_FOR_TESTING_SHA256_X86_64}  /tmp/chrome.zip" | sha256sum -c - \
+   && unzip -q /tmp/chrome.zip -d /opt/chrome \
+   && rm /tmp/chrome.zip \
+   && printf '#!/bin/sh\nexec /opt/chrome/chrome-linux64/chrome --no-sandbox --disable-dev-shm-usage "$@"\n' \
+        > /opt/chrome/chrome-wrapper \
+   && chmod +x /opt/chrome/chrome-wrapper; \
+    else \
+      echo "Chrome for Testing unavailable for $ARCH; skipping (flutter build web still works)" >&2; \
+    fi
+
+# Flutter + Dart on PATH for the runtime user (root); FLUTTER_ROOT lets the tool
+# find its SDK. PUB_CACHE lives under /root so package downloads persist in the
+# claude-code-root named volume across runs — the SDK itself is baked at /opt,
+# not here. CHROME_EXECUTABLE is the --no-sandbox wrapper (absent on non-x86_64,
+# where Flutter just reports Chrome as unavailable).
+ENV FLUTTER_ROOT=/opt/flutter \
+    PUB_CACHE=/root/.pub-cache \
+    CHROME_EXECUTABLE=/opt/chrome/chrome-wrapper \
+    PATH=/opt/flutter/bin:${PATH}
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required

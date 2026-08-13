@@ -2,7 +2,7 @@
 
 Hardened Docker container for running Claude Code. Filesystem access is scoped to the directories you pass in; your host statusline, skills, agents, and commands come along via read-only bind-mounts.
 
-Bundled CLIs on the default PATH: `claude`, `gh`, `glab`, `aws` (v2), `az`, `openspec`, `uv`, `uvx`, `pnpm`, `pnpx`, `tfenv`, `tofuenv`. See [Credential opt-in](#credential-opt-in) for `gh` / `glab` / `aws` / `tfe` / `tofu` / `ado`; `openspec`, the package managers (`uv`/`uvx`/`pnpm`/`pnpx`), and the version managers (`tfenv`/`tofuenv`) themselves need no flags.
+Bundled CLIs on the default PATH: `claude`, `gh`, `glab`, `aws` (v2), `az`, `openspec`, `uv`, `uvx`, `pnpm`, `pnpx`, `tfenv`, `tofuenv`, `flutter`, `dart`. The Flutter SDK is web-first: web is enabled and its engine artifacts are precached at build (offline-ready), a headless Chrome for Testing is bundled and wired via `CHROME_EXECUTABLE` for `flutter test --platform chrome` / web runs, and the mobile engine artifacts are pruned to keep the image lean (the bundled Android SDK/Gradle still work, but `flutter build apk` re-fetches its engine at first use). See [Credential opt-in](#credential-opt-in) for `gh` / `glab` / `aws` / `tfe` / `tofu` / `ado`; `openspec`, the package managers (`uv`/`uvx`/`pnpm`/`pnpx`), and the version managers (`tfenv`/`tofuenv`) themselves need no flags.
 
 ## Install
 
