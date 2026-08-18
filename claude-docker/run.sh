@@ -75,12 +75,12 @@ Wrapper flags:
                       set, 1Password fallback via CLAUDE_DOCKER_GITHUB_OP_REF
                       (`op read` on host); setting the ref makes 1Password
                       authoritative and skips the gh-login fallback.
-  --glab              Opt in to GitLab: mount glab-cli config (:ro) and
-                      forward GITLAB_TOKEN; unmask in-container glab login.
-                      When GITLAB_TOKEN is unset, 1Password fallback via
-                      CLAUDE_DOCKER_GITLAB_OP_REF (`op read` on host);
-                      setting the ref makes 1Password authoritative and
-                      skips the glab-config fallback.
+  --glab              Opt in to GitLab: forward GITLAB_TOKEN, sourced from
+                      the host env var or, when unset, 1Password via
+                      CLAUDE_DOCKER_GITLAB_OP_REF (`op read` on host). No
+                      glab-cli config is mounted and no on-disk login is read
+                      — GitLab auth is token-only, so set the op-ref (or an
+                      explicit GITLAB_TOKEN) or --glab has no GitLab auth.
   --tfe               Opt in to Terraform Cloud (app.terraform.io): mount
                       ~/.terraform.d/credentials.tfrc.json (:ro) when
                       present and forward TF_TOKEN_app_terraform_io;
@@ -251,17 +251,13 @@ for ws in "${WORKSPACES[@]}"; do
 done
 CWD="${CONTAINER_PATHS[0]}"
 
-# File-based host creds. gh uses macOS Keychain → log in inside the container once; persists via claude-code-root.
-# glab on macOS lives under ~/Library/Application Support/glab-cli (not XDG); fall back to ~/.config/glab-cli on Linux.
-if [ "$WITH_GLAB" = "1" ]; then
-  glab_src=""
-  if [ -d "$HOME/Library/Application Support/glab-cli" ]; then
-    glab_src="$HOME/Library/Application Support/glab-cli"
-  elif [ -d "$HOME/.config/glab-cli" ]; then
-    glab_src="$HOME/.config/glab-cli"
-  fi
-  [ -n "$glab_src" ] && MOUNT_ARGS+=("-v" "$glab_src:/root/.config/glab-cli:ro")
-fi
+# --glab deliberately does NOT mount the host glab-cli config. GitLab auth
+# in-container comes solely from GITLAB_TOKEN (host env or the
+# CLAUDE_DOCKER_GITLAB_OP_REF 1Password op-ref below), so no on-disk glab
+# login can act as a silent token source. The /root/.config/glab-cli dir is
+# always tmpfs-masked (see the mask block near the docker run assembly) so a
+# stray in-container `glab auth login` can't persist and shadow the op-ref
+# either. This forces the proper 1Password (or explicit env) path.
 
 # Scoped AWS mount: only non-secret config + short-lived SSO bearer cache.
 # Excludes ~/.aws/credentials (long-lived access keys) and ~/.aws/cli/cache
@@ -395,48 +391,13 @@ if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] 
   fi
 fi
 
-# --glab CLI fallback: parse the glab config file directly to extract the
-# token for each enumerated host (or default gitlab.com when enumeration
-# is empty). We deliberately do NOT call `glab auth token` here because
-# that subcommand isn't present across glab releases (1.97 doesn't have
-# it; the documented method is `glab auth status --show-token` whose
-# output is human-formatted). The on-disk YAML config has a stable
-# schema across versions and is owned by the invoking user (uid 1000),
-# so it's the most reliable source. Skipped when CLAUDE_DOCKER_GITLAB_OP_REF
-# is set so 1Password stays the single source of truth (the op-ref block
-# below supplies the token instead of the on-disk glab login).
-if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ] \
-   && [ -z "${CLAUDE_DOCKER_GITLAB_OP_REF:-}" ]; then
-  cfg="$HOME/.config/glab-cli/config.yml"
-  if [ -r "$cfg" ]; then
-    candidates="${glab_hosts:-gitlab.com}"
-    old_ifs=$IFS; IFS=','
-    for host in $candidates; do
-      [ -n "$host" ] || continue
-      glab_token=$(awk -v target="$host" '
-        function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
-        BEGIN { in_host = 0 }
-        {
-          t = trim($0)
-          if (t == target ":") { in_host = 1; next }
-          if (in_host && t ~ /^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9-]+:$/) in_host = 0
-          if (in_host && t ~ /^token:[[:space:]]+/) {
-            sub(/^token:[[:space:]]+/, "", t); sub(/[[:space:]]+$/, "", t)
-            gsub(/^"|"$/, "", t)
-            print t; exit
-          }
-        }
-      ' "$cfg" 2>/dev/null)
-      if [ -n "$glab_token" ]; then
-        GITLAB_TOKEN="$glab_token"
-        export GITLAB_TOKEN
-        ENV_ARGS+=("-e" "GITLAB_TOKEN")
-        break
-      fi
-    done
-    IFS=$old_ifs
-  fi
-fi
+# GitLab token has NO on-disk fallback (by design). Unlike --gh, which still
+# falls back to `gh auth token`, --glab derives GITLAB_TOKEN only from the host
+# env var or the CLAUDE_DOCKER_GITLAB_OP_REF op-ref block below. The old
+# glab-config parser was removed deliberately: it let a stale on-disk glab
+# login silently supply a token, defeating "1Password is the source of truth".
+# With it gone, --glab without an op-ref (or explicit GITLAB_TOKEN) has no
+# GitLab auth, which forces minting a proper 1Password-backed token.
 
 # Hard-timeout wrapper around `op read`. Without it, a 1Password/network
 # outage makes each read hang until the TCP connect times out; across the
@@ -790,7 +751,11 @@ if [ "$EPHEMERAL" = "0" ]; then
   # --tofu being off: `terraform login` and `tofu login` write the same path,
   # so either flag is sufficient consent to expose it.
   [ "$WITH_GH" = "0" ]   && MOUNT_ARGS+=("--tmpfs" "/root/.config/gh")
-  [ "$WITH_GLAB" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/root/.config/glab-cli")
+  # glab-cli is ALWAYS masked (not gated on --glab): --glab no longer mounts
+  # the host config and GitLab auth is GITLAB_TOKEN-only, so no persisted
+  # in-container glab login may ever act as a credential source or shadow the
+  # op-ref.
+  MOUNT_ARGS+=("--tmpfs" "/root/.config/glab-cli")
   [ "$WITH_TFE" = "0" ] && [ "$WITH_TOFU" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/root/.terraform.d")
   MOUNT_ARGS=(-v claude-code-root:/root -v claude-code-home:/root/.claude "${MOUNT_ARGS[@]}")
 fi
