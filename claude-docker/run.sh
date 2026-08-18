@@ -71,9 +71,16 @@ Wrapper flags:
                       "aegon"). Pick a tenant explicitly with --profile;
                       there is no silent default identity.
   --gh                Opt in to GitHub: forward GH_TOKEN / GITHUB_TOKEN and
-                      unmask in-container gh login state.
+                      unmask in-container gh login state. When neither is
+                      set, 1Password fallback via CLAUDE_DOCKER_GITHUB_OP_REF
+                      (`op read` on host); setting the ref makes 1Password
+                      authoritative and skips the gh-login fallback.
   --glab              Opt in to GitLab: mount glab-cli config (:ro) and
                       forward GITLAB_TOKEN; unmask in-container glab login.
+                      When GITLAB_TOKEN is unset, 1Password fallback via
+                      CLAUDE_DOCKER_GITLAB_OP_REF (`op read` on host);
+                      setting the ref makes 1Password authoritative and
+                      skips the glab-config fallback.
   --tfe               Opt in to Terraform Cloud (app.terraform.io): mount
                       ~/.terraform.d/credentials.tfrc.json (:ro) when
                       present and forward TF_TOKEN_app_terraform_io;
@@ -360,14 +367,17 @@ if [ "$WITH_GLAB" = "1" ]; then
   glab_hosts="${CLAUDE_DOCKER_GITLAB_HOSTS:-$(_extract_glab_hosts || true)}"
 fi
 
-# --gh fallback: if neither GH_TOKEN nor GITHUB_TOKEN was forwarded, walk
+# --gh CLI fallback: if neither GH_TOKEN nor GITHUB_TOKEN was forwarded, walk
 # enumerated GitHub hosts (or default github.com) and call
 # `gh auth token --hostname <host>` until one returns a token. Users
 # authenticated only against a GH Enterprise host (not github.com) would
 # otherwise get an empty token from plain `gh auth token` (which defaults
 # to github.com) and silently lose the auto-injection. Silent on failure
-# (gh absent or not logged into any enumerated host).
-if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+# (gh absent or not logged into any enumerated host). Skipped when
+# CLAUDE_DOCKER_GITHUB_OP_REF is set so 1Password stays the single source of
+# truth (the op-ref block below supplies the token instead of a stray login).
+if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] \
+   && [ -z "${CLAUDE_DOCKER_GITHUB_OP_REF:-}" ]; then
   if command -v gh >/dev/null 2>&1; then
     candidates="${gh_hosts:-github.com}"
     old_ifs=$IFS; IFS=','
@@ -385,15 +395,18 @@ if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ];
   fi
 fi
 
-# --glab fallback: parse the glab config file directly to extract the
+# --glab CLI fallback: parse the glab config file directly to extract the
 # token for each enumerated host (or default gitlab.com when enumeration
 # is empty). We deliberately do NOT call `glab auth token` here because
 # that subcommand isn't present across glab releases (1.97 doesn't have
 # it; the documented method is `glab auth status --show-token` whose
 # output is human-formatted). The on-disk YAML config has a stable
 # schema across versions and is owned by the invoking user (uid 1000),
-# so it's the most reliable source.
-if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ]; then
+# so it's the most reliable source. Skipped when CLAUDE_DOCKER_GITLAB_OP_REF
+# is set so 1Password stays the single source of truth (the op-ref block
+# below supplies the token instead of the on-disk glab login).
+if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ] \
+   && [ -z "${CLAUDE_DOCKER_GITLAB_OP_REF:-}" ]; then
   cfg="$HOME/.config/glab-cli/config.yml"
   if [ -r "$cfg" ]; then
     candidates="${glab_hosts:-gitlab.com}"
@@ -501,6 +514,43 @@ if [ "$WITH_AWS" = "1" ]; then
       CLAUDE_DOCKER_AWS_STATIC_REGION="$aws_reg"
       export CLAUDE_DOCKER_AWS_STATIC_REGION
       ENV_ARGS+=("-e" "CLAUDE_DOCKER_AWS_STATIC_REGION")
+    fi
+  fi
+fi
+
+# --gh op-ref fallback: when neither GH_TOKEN nor GITHUB_TOKEN is set on the
+# host, read the token from 1Password via `op read "$CLAUDE_DOCKER_GITHUB_OP_REF"`.
+# Unlike the CLI fallback above (which reads a `gh` login), this makes
+# 1Password the authoritative source — the CLI fallback is skipped when the
+# ref is set, so a stray host `gh auth login` can't shadow it. e.g.
+# CLAUDE_DOCKER_GITHUB_OP_REF="op://claude-docker/github-pat/credential".
+# Silent on failure: op missing, not signed in, item absent, or VPN timeout.
+if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_GITHUB_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    gh_pat=$(op_read "$CLAUDE_DOCKER_GITHUB_OP_REF" || true)
+    if [ -n "$gh_pat" ]; then
+      GH_TOKEN="$gh_pat"
+      export GH_TOKEN
+      ENV_ARGS+=("-e" "GH_TOKEN")
+    fi
+  fi
+fi
+
+# --glab op-ref fallback: when GITLAB_TOKEN isn't set on the host, read it
+# from 1Password via `op read "$CLAUDE_DOCKER_GITLAB_OP_REF"`. Same shape as
+# the --gh op-ref above: 1Password is authoritative and the glab-config
+# fallback is skipped when the ref is set. e.g.
+# CLAUDE_DOCKER_GITLAB_OP_REF="op://claude-docker/gitlab-pat/credential".
+# Silent on failure: op missing, not signed in, item absent, or VPN timeout.
+if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_GITLAB_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    glab_pat=$(op_read "$CLAUDE_DOCKER_GITLAB_OP_REF" || true)
+    if [ -n "$glab_pat" ]; then
+      GITLAB_TOKEN="$glab_pat"
+      export GITLAB_TOKEN
+      ENV_ARGS+=("-e" "GITLAB_TOKEN")
     fi
   fi
 fi
