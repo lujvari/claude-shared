@@ -142,6 +142,17 @@ export CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential"
 claude-docker --gh --glab --ado ~/repo
 ```
 
+**Persist the refs in a file, not your shell rc (recommended).** An `export` in `~/.bashrc` is re-read only by *new* interactive shells, so a long-lived, reused console launches `claude-docker` with the *old* environment — a ref you added later is silently empty, and the container gets no credential with no error. Put the refs in `~/.config/claude-docker/env` instead (override the path with `CLAUDE_DOCKER_ENV_FILE`; respects `XDG_CONFIG_HOME`), which `run.sh` reads at launch regardless of shell-startup timing:
+
+```bash
+# ~/.config/claude-docker/env — one KEY=value per line; `export ` and quotes optional
+CLAUDE_DOCKER_GITHUB_OP_REF="op://claude-docker/github-pat/credential"
+CLAUDE_DOCKER_GITLAB_OP_REF="op://claude-docker/gitlab-pat/credential"
+CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential"
+```
+
+Values are read literally (no shell expansion, `#`-first lines are comments) and an already-set env var wins, so a one-off `export … ; claude-docker …` still overrides the file. The op:// values are pointers, not secrets, so the file is safe on disk — the PATs stay in 1Password.
+
 For each opted-in flag, when the host env var (`GH_TOKEN`/`GITHUB_TOKEN`, `GITLAB_TOKEN`, `AZURE_DEVOPS_EXT_PAT`) is unset, `run.sh` runs `op read` on the host and forwards the resulting token into the container. **For `--gh`, setting the op-ref is authoritative — the `gh auth token` CLI fallback is skipped when the ref is present, so a stray host login can't shadow the 1Password value** (this is what prevents the "multiple logins" drift). **`--glab` goes further: it has no on-disk fallback at all** (no config mount, no config parse) — GitLab auth comes only from `GITLAB_TOKEN` (host env or op-ref), so there's nothing to shadow it. Host env vars still win over the op-ref when both are set (an explicit override / escape hatch). ADO's PAT has no CLI tool storing it on disk, so its only sources are the env var and the op-ref.
 
 Least-privilege pays off here since the resolved token is visible in the container env: scope the GitHub PAT (fine-grained, only the repos you touch), give the GitLab PAT just `api` + `write_repository`, and set expiries. Rotation point becomes the 1P item. To retire the old on-disk logins so 1Password is the only source, run `gh auth logout` / `glab auth logout` on the host and remove any lingering `GH_TOKEN`/`GITLAB_TOKEN` exports from your shell profile. On a bad-VPN day `op read` can time out (capped by `CLAUDE_DOCKER_OP_TIMEOUT`, default 5s) — the credential is then skipped with a warning rather than hanging startup.
