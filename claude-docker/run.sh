@@ -292,6 +292,45 @@ if [ "$WITH_TOFU" = "1" ]; then
   [ -f "$HOME/.tofurc" ] && MOUNT_ARGS+=("-v" "$HOME/.tofurc:/root/.tofurc:ro")
 fi
 
+# ── Persistent config file ────────────────────────────────────────────────
+# run.sh reads its CLAUDE_DOCKER_* settings — notably the *_OP_REF 1Password
+# pointers — from the environment. Persisting an env var normally means an
+# `export` in a shell rc (~/.bashrc), which only *new* interactive shells
+# re-read, so a long-lived, reused console launches with stale/empty values
+# (the "op-ref was set on the host but the container saw nothing" trap). Load
+# them instead from an optional env file that doesn't depend on shell-startup
+# timing. An op:// reference is a pointer, not a secret, so it is safe on disk.
+#
+# Format: `KEY=value`, one per line (a leading `export ` is tolerated, as is one
+# layer of surrounding quotes). No shell expansion is performed — values are
+# taken literally and a line whose first non-blank char is `#` is a comment. A
+# value already present in the launching environment wins, so an explicit
+# one-off `export FOO=... ; claude-docker ...` still overrides the file.
+# Relocate the file with CLAUDE_DOCKER_ENV_FILE.
+CD_ENV_FILE="${CLAUDE_DOCKER_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-docker/env}"
+if [ -r "$CD_ENV_FILE" ]; then
+  while IFS= read -r cd_line || [ -n "$cd_line" ]; do
+    cd_line=${cd_line#"${cd_line%%[![:space:]]*}"}            # strip leading whitespace
+    case $cd_line in
+      ''|\#*)    continue ;;                                  # blank or comment line
+      export\ *) cd_line=${cd_line#export }
+                 cd_line=${cd_line#"${cd_line%%[![:space:]]*}"} ;;
+    esac
+    cd_key=${cd_line%%=*}
+    case $cd_key in
+      "$cd_line"|''|*[!A-Za-z0-9_]*) continue ;;              # no '=', empty, or non-identifier key
+    esac
+    if [ -n "${!cd_key:-}" ]; then continue; fi               # env wins over the file
+    cd_val=${cd_line#*=}
+    case $cd_val in                                           # drop one layer of matching quotes
+      \"*\") cd_val=${cd_val#\"}; cd_val=${cd_val%\"} ;;
+      \'*\') cd_val=${cd_val#\'}; cd_val=${cd_val%\'} ;;
+    esac
+    export "$cd_key=$cd_val"
+  done < "$CD_ENV_FILE"
+  unset cd_line cd_key cd_val
+fi
+
 ENV_VARS=()
 [ "$WITH_GH" = "1" ]   && ENV_VARS+=(GH_TOKEN GITHUB_TOKEN)
 [ "$WITH_GLAB" = "1" ] && ENV_VARS+=(GITLAB_TOKEN)
