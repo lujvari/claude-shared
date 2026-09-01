@@ -438,38 +438,151 @@ fi
 # With it gone, --glab without an op-ref (or explicit GITLAB_TOKEN) has no
 # GitLab auth, which forces minting a proper 1Password-backed token.
 
-# Hard-timeout wrapper around `op read`. Without it, a 1Password/network
-# outage makes each read hang until the TCP connect times out; across the
-# up-to-6 sequential reads below (4 for --aws, 1 each for --ado/--jira) that
-# silently added minutes to startup and dropped the creds with no message
-# (the old `2>/dev/null || true` swallowed the failure). Now each read is
-# capped at CLAUDE_DOCKER_OP_TIMEOUT seconds (default 5) and a warning naming
-# the ref is emitted on each timeout. Returns empty + non-zero so callers' existing
-# non-empty checks no-op the fallback exactly as before. `timeout` is
-# coreutils (gtimeout on macOS via brew); when neither is present we fall back
-# to a plain read so behaviour is unchanged on hosts without it.
+# Hard-timeout + error-surfacing wrapper around `op read`. Without the timeout,
+# a 1Password/network outage makes each read hang until the TCP connect times
+# out; across the up-to-6 sequential reads below (4 for --aws, 1 each for
+# --ado/--jira) that silently added minutes to startup and dropped the creds
+# with no message (the original `2>/dev/null || true` swallowed the failure).
+# Each read is capped at CLAUDE_DOCKER_OP_TIMEOUT seconds (default 5).
+#
+# Capping alone wasn't enough: `2>/dev/null` still hid every non-timeout
+# failure, so a revoked/expired service-account token dropped some creds in
+# total silence while others tripped the cap (op retries a rejected credential
+# before giving up) and got reported as a network problem. op's own stderr is
+# now relayed on any non-zero exit, which is the only thing that names the
+# actual cause (e.g. "(403) Forbidden" => token rejected, not unreachable).
+# Returns empty + non-zero so callers' existing non-empty checks no-op the
+# fallback exactly as before. `timeout` is coreutils (gtimeout on macOS via
+# brew); when neither is present we fall back to a plain read so behaviour is
+# unchanged on hosts without it.
 OP_READ_TIMEOUT="${CLAUDE_DOCKER_OP_TIMEOUT:-5}"
 if command -v timeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=timeout
 elif command -v gtimeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=gtimeout
 else OP_TIMEOUT_BIN=""; fi
 op_read() {
-  op_out=""; op_rc=0
+  # Preflight below found the token unusable — skip the read entirely rather
+  # than emit an identical failure for every ref.
+  if [ "${OP_PREFLIGHT_OK:-1}" != "1" ]; then return 1; fi
+  op_out=""; op_rc=0; op_err=""
+  # op's stderr has to land in a file, not a variable: op_read's stdout is
+  # already captured by the caller's $(...), so 2>&1 would corrupt the secret.
+  op_errf="${TMPDIR:-/tmp}/claude-docker-op-err.$$"
   if [ -n "$OP_TIMEOUT_BIN" ]; then
-    op_out=$("$OP_TIMEOUT_BIN" "$OP_READ_TIMEOUT" op read "$1" 2>/dev/null); op_rc=$?
+    op_out=$("$OP_TIMEOUT_BIN" "$OP_READ_TIMEOUT" op read "$1" 2>"$op_errf"); op_rc=$?
   else
-    op_out=$(op read "$1" 2>/dev/null); op_rc=$?
+    op_out=$(op read "$1" 2>"$op_errf"); op_rc=$?
   fi
-  # 124 = timeout tripped. Each call site runs op_read in a $(...) subshell,
-  # so a shared "warn once" flag wouldn't survive back to the parent — warn
-  # per timed-out read instead, naming the ref so the line stays useful. The
-  # ref is an op:// path, not the secret, so it's safe to print.
-  if [ "$op_rc" -eq 124 ]; then
-    echo "claude-docker: 'op read $1' timed out after ${OP_READ_TIMEOUT}s — 1Password unreachable (check VPN / WSL2 egress); skipping this credential." >&2
+  # Each call site runs op_read in a $(...) subshell, so a shared "warn once"
+  # flag wouldn't survive back to the parent — warn per failed read instead,
+  # naming the ref so the line stays useful. The ref is an op:// path, not the
+  # secret, so it's safe to print; op's error text names the ref too, never the
+  # value. 124 = timeout tripped, which after the change above can mean either
+  # a real outage or op retrying against a credential the server rejects — so
+  # the message no longer asserts a cause.
+  if [ "$op_rc" -ne 0 ]; then
+    op_err=$(tail -3 "$op_errf" 2>/dev/null | tr -d '\r')
+    rm -f "$op_errf"
+    if [ "$op_rc" -eq 124 ]; then
+      echo "claude-docker: 'op read $1' got no answer within ${OP_READ_TIMEOUT}s — 1Password slow/unreachable (check VPN / WSL2 egress), or op is retrying a credential the server rejected; skipping this credential." >&2
+    else
+      echo "claude-docker: 'op read $1' failed (op exit $op_rc); skipping this credential." >&2
+      [ -n "$op_err" ] && echo "claude-docker:   op: $op_err" >&2
+      echo "claude-docker:   hint: run 'op whoami' — a (403) here means the service-account token is expired/revoked, not a network fault." >&2
+    fi
     return 1
   fi
+  rm -f "$op_errf"
   printf '%s' "$op_out"
-  return "$op_rc"
+  return 0
 }
+
+# Preflight: one `op whoami` before any credential read below. Two reasons.
+# (1) A rejected service-account token otherwise surfaces as up to 7 separate
+# per-ref failures *after* startup has begun, and because op_read returns empty
+# rather than fatal, the container still comes up with credentials silently
+# missing — the failure then lands deep inside a Claude session instead of at
+# the door. (2) `op whoami` separates the two causes that need different fixes:
+# a (403) means the token is expired/revoked/deleted (mint a new one), while a
+# timeout means 1Password is slow or unreachable (VPN / WSL2 egress). Neither is
+# inferable from a per-field read failure.
+#
+# No proactive "expires in N days" warning is possible here: the op CLI cannot
+# report a token's expiry — `op whoami` returns no expiry field and
+# `op service-account` exposes only create/ratelimit — so failing loudly at
+# launch is the earliest signal available.
+#
+# The conditions below mirror each credential block's own guard exactly (flag
+# set AND its direct env var empty AND its op-ref configured), so the preflight
+# never runs when no block would have called op_read anyway — creds already in
+# the host env, or e.g. --glab with no CLAUDE_DOCKER_GITLAB_OP_REF.
+OP_PREFLIGHT_OK=1
+op_needed=0
+op_needed_for=""
+if command -v op >/dev/null 2>&1; then
+  if [ "$WITH_AWS" = "1" ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_AWS_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --aws"
+  fi
+  if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_GITHUB_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --gh"
+  fi
+  if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_GITLAB_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --glab"
+  fi
+  if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --ado"
+  fi
+  if [ "$WITH_JIRA" = "1" ] && [ -z "${JIRA_API_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_JIRA_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --jira"
+  fi
+fi
+if [ "$op_needed" = "1" ]; then
+  op_pf_errf="${TMPDIR:-/tmp}/claude-docker-op-preflight.$$"
+  # `if cmd; then rc=0; else rc=$?; fi` rather than `cmd; rc=$?`: under the
+  # `set -e` at the top of this file the bare form would abort the launcher
+  # before the diagnostics below could run.
+  if [ -n "$OP_TIMEOUT_BIN" ]; then
+    if "$OP_TIMEOUT_BIN" "$OP_READ_TIMEOUT" op whoami >/dev/null 2>"$op_pf_errf"; then op_pf_rc=0; else op_pf_rc=$?; fi
+  else
+    if op whoami >/dev/null 2>"$op_pf_errf"; then op_pf_rc=0; else op_pf_rc=$?; fi
+  fi
+  if [ "$op_pf_rc" -ne 0 ]; then
+    op_pf_err=$(tail -2 "$op_pf_errf" 2>/dev/null | tr -d '\r' || true)
+    # Suppresses the per-ref reads below (op_read checks this): with the token
+    # unusable each would fail identically, burying one actionable line under a
+    # wall of duplicates.
+    OP_PREFLIGHT_OK=0
+    echo "claude-docker: 1Password preflight FAILED — credentials for${op_needed_for} are unavailable." >&2
+    if [ "$op_pf_rc" -eq 124 ]; then
+      echo "claude-docker:   'op whoami' gave no answer within ${OP_READ_TIMEOUT}s — 1Password slow or unreachable (check VPN / WSL2 egress)." >&2
+    else
+      case "$op_pf_err" in
+        *403*|*orbidden*)
+          echo "claude-docker:   'op whoami' returned (403) Forbidden — the service-account token is expired, revoked, or its service account was deleted." >&2
+          echo "claude-docker:   Fix: mint a new token (1Password > Developer > Service Accounts; grant read on the vault holding your op:// refs)," >&2
+          echo "claude-docker:   then replace OP_SERVICE_ACCOUNT_TOKEN in your shell rc and start a new shell." >&2
+          ;;
+        *)
+          echo "claude-docker:   'op whoami' failed (op exit $op_pf_rc)." >&2
+          if [ -n "$op_pf_err" ]; then echo "claude-docker:   op: $op_pf_err" >&2; fi
+          ;;
+      esac
+    fi
+    if [ "${CLAUDE_DOCKER_OP_OPTIONAL:-0}" = "1" ]; then
+      echo "claude-docker:   CLAUDE_DOCKER_OP_OPTIONAL=1 set — launching anyway; the flags above will have no credentials." >&2
+    else
+      echo "claude-docker:   Aborting before launch. Re-run with CLAUDE_DOCKER_OP_OPTIONAL=1 to start without these credentials." >&2
+      rm -f "$op_pf_errf"
+      exit 1
+    fi
+  fi
+  rm -f "$op_pf_errf"
+fi
+# --- end 1Password preflight ---
 
 # --aws static credentials → NAMED profile (never ambient env). Static IAM
 # keys can arrive two ways:
