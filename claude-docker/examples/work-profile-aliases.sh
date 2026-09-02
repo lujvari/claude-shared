@@ -36,8 +36,10 @@ ccis()    { _ccbase --glab --aws --tofu "$DEV/sbp/cis/" "$DEV/tools/" "$@"; }
 # CIS code-only, narrowest: just the GitLab repo, no cloud credentials at all.
 ccisr()   { _ccbase --glab "$DEV/sbp/cis/" "$@"; }
 
-# Control Tower (.NET / Azure DevOps).
-cct()     { _ccbase --ado "$DEV/sbp/ct/" "$@"; }
+# Control Tower (.NET / Azure DevOps + Jira). --jira is CT-only.
+# Needs CLAUDE_DOCKER_JIRA_OP_REF in ~/.config/claude-docker/env alongside the
+# others (e.g. op://SBP.DataChecks/jira/api-token) or JIRA_API_TOKEN preset.
+cct()     { _ccbase --ado --jira "$DEV/sbp/ct/" "$@"; }
 
 # Personal / GitHub work (myEntryPoint, laslo).
 cgh()     { _ccbase --gh "$DEV" "$@"; }
