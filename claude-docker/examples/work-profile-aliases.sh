@@ -38,7 +38,8 @@ ccisr()   { _ccbase --glab "$DEV/sbp/cis/" "$@"; }
 
 # Control Tower (.NET / Azure DevOps + Jira). --jira is CT-only.
 # Needs CLAUDE_DOCKER_JIRA_OP_REF in ~/.config/claude-docker/env alongside the
-# others (e.g. op://SBP.DataChecks/jira/api-token) or JIRA_API_TOKEN preset.
+# others (e.g. op://claude-docker/Jira API Token/credential), plus the
+# non-secret JIRA_USER_EMAIL / JIRA_BASE_URL literals.
 cct()     { _ccbase --ado --jira "$DEV/sbp/ct/" "$@"; }
 
 # Personal / GitHub work (myEntryPoint, laslo).
