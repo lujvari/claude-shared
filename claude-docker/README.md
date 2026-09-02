@@ -155,7 +155,26 @@ Values are read literally (no shell expansion, `#`-first lines are comments) and
 
 For each opted-in flag, when the host env var (`GH_TOKEN`/`GITHUB_TOKEN`, `GITLAB_TOKEN`, `AZURE_DEVOPS_EXT_PAT`) is unset, `run.sh` runs `op read` on the host and forwards the resulting token into the container. **For `--gh`, setting the op-ref is authoritative — the `gh auth token` CLI fallback is skipped when the ref is present, so a stray host login can't shadow the 1Password value** (this is what prevents the "multiple logins" drift). **`--glab` goes further: it has no on-disk fallback at all** (no config mount, no config parse) — GitLab auth comes only from `GITLAB_TOKEN` (host env or op-ref), so there's nothing to shadow it. Host env vars still win over the op-ref when both are set (an explicit override / escape hatch). ADO's PAT has no CLI tool storing it on disk, so its only sources are the env var and the op-ref.
 
-Least-privilege pays off here since the resolved token is visible in the container env: scope the GitHub PAT (fine-grained, only the repos you touch), give the GitLab PAT just `api` + `write_repository`, and set expiries. Rotation point becomes the 1P item. To retire the old on-disk logins so 1Password is the only source, run `gh auth logout` / `glab auth logout` on the host and remove any lingering `GH_TOKEN`/`GITLAB_TOKEN` exports from your shell profile. On a bad-VPN day `op read` can time out (capped by `CLAUDE_DOCKER_OP_TIMEOUT`, default 5s) — the credential is then skipped with a warning rather than hanging startup.
+Least-privilege pays off here since the resolved token is visible in the container env: scope the GitHub PAT (fine-grained, only the repos you touch), give the GitLab PAT just `api` + `write_repository` (classic scopes), and set expiries. Rotation point becomes the 1P item. To retire the old on-disk logins so 1Password is the only source, run `gh auth logout` / `glab auth logout` on the host and remove any lingering `GH_TOKEN`/`GITLAB_TOKEN` exports from your shell profile. On a bad-VPN day `op read` can time out (capped by `CLAUDE_DOCKER_OP_TIMEOUT`, default 5s) — the credential is then skipped with a warning rather than hanging startup.
+
+#### GitLab fine-grained PAT recipe (self-managed instances)
+
+Newer self-managed GitLab (e.g. `sbp.gitlab.schubergphilis.com`) offers **fine-grained** PATs that scope by resource + permission instead of the classic `api`/`write_repository` scopes. Both `git` (clone/pull/push) and `glab` read the token from `GITLAB_TOKEN`, so one fine-grained token covers both. Mint it on the *correct instance* (check the URL bar is the self-managed host, not `gitlab.com`), then store the value at `op://claude-docker/gitlab-pat/credential`.
+
+A working scope set (git pull/push + `glab mr`/tag/work-item flows across all your repos):
+
+- **Group and project access:** *All groups and projects that I'm a member of, including future ones* (simplest; or pick specific groups like `sbp-ai`, `ASR`, `aegon`).
+- **Repository:**
+  - `Code`: Download, Push, Read — **the git-critical one**; clone/pull/push won't work without it.
+  - `Repository`: Read, Update
+  - `Branch`: Create, Delete, Read, Protect
+  - `Commit`: Read, Create
+  - `Merge Request`: Create, Approve, Merge, Update, Read
+  - `Repository Tag`: Create, Read — needed for release-tag flows.
+- **Projects:** `Project`: Read
+- **Project Planning:** `Work Item`: Create, Delete, Read, Update — for issue/work-item ops via `glab`/API.
+
+Leave the **User** and **Global** permission blocks empty. Absolute minimum for a read-only `git pull` is just `Code` (Read); the rest enable the everyday push/MR/tag/issue workflow so you don't have to re-mint. Note the expiry date GitLab forces (usually ≤1 year) — re-mint into the same 1P item to rotate.
 
 ### Terraform Cloud workflow
 
