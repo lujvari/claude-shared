@@ -54,6 +54,13 @@ ARG FLUTTER_SHA256_X86_64=a9120fa4a01048bdef438ddc3a2d4b7389662ea98a95db86eeaf10
 #   V=<ver>; curl -fsSL https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chrome-linux64.zip | sha256sum
 ARG CHROME_FOR_TESTING_VERSION=151.0.7922.77
 ARG CHROME_FOR_TESTING_SHA256_X86_64=60a324a6e1d27b20f2035a2cdaf71641a739fe1f5571f63794773225820bce8a
+# chromedriver — pinned to the SAME CfT release as the browser above, so the
+# driver can never drift off Chrome's major version (the usual way a chromedriver
+# setup rots). Required by `flutter drive` for web integration_test targets;
+# without it a project's integration_test/ suite cannot run in this sandbox at
+# all. Bump alongside CHROME_FOR_TESTING_VERSION + get the sha:
+#   V=<ver>; curl -fsSL https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chromedriver-linux64.zip | sha256sum
+ARG CHROMEDRIVER_SHA256_X86_64=65dca829d176845f864b794be1ecdd31e855f14ca9fa1eb93b2d1c0e7242abdd
 
 # Make apt runnable under --cap-drop ALL at runtime. Two pieces:
 #  1. APT::Sandbox::User "root" stops the http method from setgroups()→_apt
@@ -357,6 +364,11 @@ RUN apt-get update \
 # --no-sandbox: the container runs as root under --cap-drop ALL, where Chrome's
 # namespace sandbox can't initialise; --no-sandbox is safe because the container
 # itself is the security boundary (IS_SANDBOX=1 + no-new-privileges).
+# The matching chromedriver is installed in the same layer and symlinked onto
+# PATH. `google-chrome` is symlinked to the --no-sandbox wrapper too: chromedriver
+# launches the browser itself and finds it by searching PATH for that name, so
+# without the symlink it would either fail to locate Chrome or start it with the
+# namespace sandbox enabled, which cannot initialise as root under --cap-drop ALL.
 RUN set -e; ARCH=$(uname -m); \
     if [ "$ARCH" = x86_64 ]; then \
       curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-linux64.zip" \
@@ -366,7 +378,14 @@ RUN set -e; ARCH=$(uname -m); \
    && rm /tmp/chrome.zip \
    && printf '#!/bin/sh\nexec /opt/chrome/chrome-linux64/chrome --no-sandbox --disable-dev-shm-usage "$@"\n' \
         > /opt/chrome/chrome-wrapper \
-   && chmod +x /opt/chrome/chrome-wrapper; \
+   && chmod +x /opt/chrome/chrome-wrapper \
+   && curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chromedriver-linux64.zip" \
+        -o /tmp/chromedriver.zip \
+   && echo "${CHROMEDRIVER_SHA256_X86_64}  /tmp/chromedriver.zip" | sha256sum -c - \
+   && unzip -q /tmp/chromedriver.zip -d /opt/chrome \
+   && rm /tmp/chromedriver.zip \
+   && ln -s /opt/chrome/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+   && ln -s /opt/chrome/chrome-wrapper /usr/local/bin/google-chrome; \
     else \
       echo "Chrome for Testing unavailable for $ARCH; skipping (flutter build web still works)" >&2; \
     fi
