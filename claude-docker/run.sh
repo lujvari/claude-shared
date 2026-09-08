@@ -99,6 +99,12 @@ Wrapper flags:
                       in-container scripts can hit the Jira REST API
                       (Basic auth = email:api-token). 1Password fallback
                       via CLAUDE_DOCKER_JIRA_OP_REF (`op read` on host).
+  --supabase          Opt in to Supabase: forward SUPABASE_ACCESS_TOKEN so
+                      the Supabase MCP server (and any in-container script)
+                      can reach the Management API. 1Password fallback via
+                      CLAUDE_DOCKER_SUPABASE_OP_REF (`op read` on host).
+                      Reference it from the MCP entry's env as
+                      "${SUPABASE_ACCESS_TOKEN}", never a pasted literal.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -177,6 +183,7 @@ WITH_TFE=0
 WITH_TOFU=0
 WITH_ADO=0
 WITH_JIRA=0
+WITH_SUPABASE=0
 WITH_CLAUDE_AUTH=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
@@ -199,6 +206,7 @@ for arg in "$@"; do
     --tofu)         WITH_TOFU=1 ;;
     --ado)          WITH_ADO=1 ;;
     --jira)         WITH_JIRA=1 ;;
+    --supabase)     WITH_SUPABASE=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
@@ -366,6 +374,10 @@ fi
 # the in-container Jira REST scripts need all three to function (Basic
 # auth pairs the email with the token; the URL routes the request).
 [ "$WITH_JIRA" = "1" ] && ENV_VARS+=(JIRA_USER_EMAIL JIRA_BASE_URL JIRA_API_TOKEN)
+# Only the PAT is a secret: a Supabase project ref is public (it is the
+# hostname in https://<ref>.supabase.co) and belongs in the MCP server's
+# --project-ref argument, not in a forwarded env var.
+[ "$WITH_SUPABASE" = "1" ] && ENV_VARS+=(SUPABASE_ACCESS_TOKEN)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -557,6 +569,10 @@ if command -v op >/dev/null 2>&1; then
      && [ -n "${CLAUDE_DOCKER_JIRA_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --jira"
   fi
+  if [ "$WITH_SUPABASE" = "1" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_SUPABASE_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --supabase"
+  fi
 fi
 if [ "$op_needed" = "1" ]; then
   op_pf_errf="${TMPDIR:-/tmp}/claude-docker-op-preflight.$$"
@@ -731,6 +747,33 @@ if [ "$WITH_JIRA" = "1" ] && [ -z "${JIRA_API_TOKEN:-}" ] \
   fi
 fi
 
+# --supabase fallback: when SUPABASE_ACCESS_TOKEN isn't pre-set on the host,
+# read it from 1Password via `op read "$CLAUDE_DOCKER_SUPABASE_OP_REF"`. Same
+# shape as the --ado/--jira fallbacks: a Supabase Personal Access Token lives
+# in a password manager, not in a CLI config file on disk.
+#
+# Point the MCP server's env at "${SUPABASE_ACCESS_TOKEN}" instead of pasting
+# the PAT in — Claude Code expands ${VAR} in an MCP `env` value from the
+# container environment when it spawns the server (verified on 2.1.236). A
+# pasted literal in ~/.claude.json cannot see a 1Password rotation, and that
+# file lives in the persistent claude-code-root volume, so it survives every
+# relaunch: the sandbox keeps getting 401 from a token that no longer exists
+# while 1Password holds a working one, and restarting never helps because the
+# literal *is* the source. Silent on failure: op missing, not signed in, or
+# item absent — the Management API then answers 401, which is more debuggable
+# than a half-injected token.
+if [ "$WITH_SUPABASE" = "1" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_SUPABASE_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    supabase_tok=$(op_read "$CLAUDE_DOCKER_SUPABASE_OP_REF" || true)
+    if [ -n "$supabase_tok" ]; then
+      SUPABASE_ACCESS_TOKEN="$supabase_tok"
+      export SUPABASE_ACCESS_TOKEN
+      ENV_ARGS+=("-e" "SUPABASE_ACCESS_TOKEN")
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can write a `git config --system url.<host>.insteadOf` for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -778,6 +821,7 @@ DOCKER_FLAGS=()
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
+[ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
