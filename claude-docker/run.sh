@@ -105,6 +105,14 @@ Wrapper flags:
                       CLAUDE_DOCKER_SUPABASE_OP_REF (`op read` on host).
                       Reference it from the MCP entry's env as
                       "${SUPABASE_ACCESS_TOKEN}", never a pasted literal.
+  --cloudflare        Opt in to Cloudflare: forward CLOUDFLARE_API_TOKEN (plus
+                      the non-secret CLOUDFLARE_ACCOUNT_ID when set) so
+                      wrangler and any in-container script can reach the
+                      Cloudflare API. 1Password fallback via
+                      CLAUDE_DOCKER_CLOUDFLARE_OP_REF (`op read` on host).
+                      No mount and no `wrangler login`: the OAuth flow needs a
+                      host browser and would persist in the container volume,
+                      so token-only is the whole auth path.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -184,6 +192,7 @@ WITH_TOFU=0
 WITH_ADO=0
 WITH_JIRA=0
 WITH_SUPABASE=0
+WITH_CLOUDFLARE=0
 WITH_CLAUDE_AUTH=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
@@ -207,6 +216,7 @@ for arg in "$@"; do
     --ado)          WITH_ADO=1 ;;
     --jira)         WITH_JIRA=1 ;;
     --supabase)     WITH_SUPABASE=1 ;;
+    --cloudflare)   WITH_CLOUDFLARE=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
@@ -378,6 +388,11 @@ fi
 # hostname in https://<ref>.supabase.co) and belongs in the MCP server's
 # --project-ref argument, not in a forwarded env var.
 [ "$WITH_SUPABASE" = "1" ] && ENV_VARS+=(SUPABASE_ACCESS_TOKEN)
+# Only the API token is a secret: an account ID is an opaque public identifier
+# that already appears in wrangler.toml and every dashboard URL. It rides along
+# because wrangler needs it to disambiguate when the token spans more than one
+# account; unset on the host simply means nothing is forwarded.
+[ "$WITH_CLOUDFLARE" = "1" ] && ENV_VARS+=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -572,6 +587,10 @@ if command -v op >/dev/null 2>&1; then
   if [ "$WITH_SUPABASE" = "1" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] \
      && [ -n "${CLAUDE_DOCKER_SUPABASE_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --supabase"
+  fi
+  if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_CLOUDFLARE_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --cloudflare"
   fi
 fi
 if [ "$op_needed" = "1" ]; then
@@ -774,6 +793,34 @@ if [ "$WITH_SUPABASE" = "1" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] \
   fi
 fi
 
+# --cloudflare fallback: when CLOUDFLARE_API_TOKEN isn't pre-set on the host,
+# read it from 1Password via `op read "$CLAUDE_DOCKER_CLOUDFLARE_OP_REF"`. Same
+# shape as the --ado/--jira/--supabase fallbacks: a Cloudflare API token lives
+# in a password manager, not in a CLI config file on disk.
+#
+# Shorter chain than --supabase: wrangler reads CLOUDFLARE_API_TOKEN straight
+# from the environment, so there is no ~/.claude.json MCP entry in the middle
+# that could pin a stale literal — the forwarded env var IS the source and a
+# rotation in 1Password lands on the next launch. Keep it that way: an
+# in-container `wrangler login` writes an OAuth token under /root, which is the
+# persistent claude-code-root volume, so that copy would survive every relaunch
+# and reproduce the stale-credential failure --supabase was built to end.
+#
+# Non-fatal on failure: op missing, not signed in, or item absent — op_read
+# warns and the credential is skipped, so wrangler then fails loudly with an
+# auth error, which is more debuggable than a half-injected token.
+if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_CLOUDFLARE_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    cloudflare_tok=$(op_read "$CLAUDE_DOCKER_CLOUDFLARE_OP_REF" || true)
+    if [ -n "$cloudflare_tok" ]; then
+      CLOUDFLARE_API_TOKEN="$cloudflare_tok"
+      export CLOUDFLARE_API_TOKEN
+      ENV_ARGS+=("-e" "CLOUDFLARE_API_TOKEN")
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can write a `git config --system url.<host>.insteadOf` for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -822,6 +869,7 @@ DOCKER_FLAGS=()
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
+[ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
