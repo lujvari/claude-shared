@@ -91,9 +91,10 @@ Wrapper flags:
                       forward TF_TOKEN_app_terraform_io; unmask
                       in-container `tofu login` state.
   --ado               Opt in to Azure DevOps: forward AZURE_DEVOPS_EXT_PAT
-                      and inject a system-level git insteadOf rewrite for
-                      dev.azure.com so in-container `git clone` against
-                      private Azure Repos works without prompting.
+                      and install a system-level git credential helper for
+                      dev.azure.com (token read at auth time, never in the
+                      URL) so in-container `git clone` against private Azure
+                      Repos works without prompting.
   --jira              Opt in to Atlassian Jira (Cloud): forward
                       JIRA_USER_EMAIL / JIRA_BASE_URL / JIRA_API_TOKEN so
                       in-container scripts can hit the Jira REST API
@@ -112,7 +113,8 @@ Wrapper flags:
                       CLAUDE_DOCKER_CLOUDFLARE_OP_REF (`op read` on host).
                       No mount and no `wrangler login`: the OAuth flow needs a
                       host browser and would persist in the container volume,
-                      so token-only is the whole auth path.
+                      so token-only is the whole auth path. Run wrangler as
+                      `npx wrangler@3`: v4 needs Node >=22, image has 20.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -400,7 +402,7 @@ if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   done
 fi
 # Enumerate authenticated hosts from gh/glab config files so the container
-# entrypoint can apply `git config --system url.<host>.insteadOf` for each.
+# entrypoint can install a per-host git credential helper for each.
 # Parsing is best-effort: on missing/unreadable/unparseable config, output
 # is empty and the entrypoint falls back to the canonical public host. The
 # config dirs may also be unreadable from inside the container (uid 0 + no
@@ -728,7 +730,7 @@ fi
 # not in a tool config), so the source is opt-in via env var pointing at
 # an op:// reference (e.g. CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential").
 # Silent on failure: op missing, not signed in, or item absent — the
-# entrypoint simply won't inject an insteadOf rewrite for this session.
+# entrypoint simply won't inject a credential helper for this session.
 if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
    && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
@@ -822,7 +824,7 @@ if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
 fi
 
 # Forward the enumerated host lists into the container so the entrypoint
-# can write a `git config --system url.<host>.insteadOf` for each. When
+# can install a per-host git credential helper for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
 # canonical public host.
 [ -n "$gh_hosts" ]   && ENV_ARGS+=("-e" "CLAUDE_DOCKER_GITHUB_HOSTS=$gh_hosts")
@@ -832,7 +834,7 @@ fi
 # tied to a CLI tool with a config file on disk like gh/glab), so default
 # to dev.azure.com and honor CLAUDE_DOCKER_ADO_HOSTS as the override.
 # Forward only when --ado is set; the entrypoint gates injection on the
-# token being present, so no rewrite happens for sessions that didn't
+# token being present, so no helper is installed for sessions that didn't
 # opt in even if the env var leaked.
 if [ "$WITH_ADO" = "1" ]; then
   ado_hosts="${CLAUDE_DOCKER_ADO_HOSTS:-dev.azure.com}"
