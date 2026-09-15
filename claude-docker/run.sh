@@ -115,6 +115,18 @@ Wrapper flags:
                       host browser and would persist in the container volume,
                       so token-only is the whole auth path. Run wrangler as
                       `npx wrangler@3`: v4 needs Node >=22, image has 20.
+  --mepdb             Opt in to the myEntryPoint test Postgres: forward
+                      POSTGRES_TEST_URL so the in-container test suite can
+                      reach the brain test database. Host env var when set,
+                      else 1Password via CLAUDE_DOCKER_MEPDB_OP_REF (`op read`
+                      on host). That ref is the only one with a built-in
+                      default, because the flag names one specific database
+                      rather than a class of service:
+                        op://claude-docker/brain-test-postgres/dsn
+                      Point the var elsewhere to override it, or set it to ""
+                      to switch the 1Password path off. The value is a full
+                      DSN, password included — keep it on a throwaway test
+                      instance, never a database holding real data.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -195,6 +207,7 @@ WITH_ADO=0
 WITH_JIRA=0
 WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
+WITH_MEPDB=0
 WITH_CLAUDE_AUTH=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
@@ -219,6 +232,7 @@ for arg in "$@"; do
     --jira)         WITH_JIRA=1 ;;
     --supabase)     WITH_SUPABASE=1 ;;
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
+    --mepdb)        WITH_MEPDB=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
@@ -395,6 +409,11 @@ fi
 # because wrangler needs it to disambiguate when the token spans more than one
 # account; unset on the host simply means nothing is forwarded.
 [ "$WITH_CLOUDFLARE" = "1" ] && ENV_VARS+=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)
+# One variable, and all of it secret: a Postgres DSN carries user, password,
+# host and database in a single string. Nothing is split out — the test suite
+# hands the value straight to its driver, so any host-side decomposition would
+# be a second representation to keep in sync.
+[ "$WITH_MEPDB" = "1" ] && ENV_VARS+=(POSTGRES_TEST_URL)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -543,6 +562,16 @@ op_read() {
   return 0
 }
 
+# --mepdb's op-ref, resolved once so the preflight below and the read block
+# further down agree on one value. Unlike every other opt-in this ref has a
+# default: the flag names one specific database (the myEntryPoint brain test
+# Postgres) rather than a class of service, so there is no per-user choice to
+# configure and requiring the env var would only be ceremony. `${VAR-default}`
+# without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
+# turns the 1Password path off entirely, matching how an unset ref disables it
+# for --gh/--glab/--ado/--jira/--supabase/--cloudflare.
+MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
+
 # Preflight: one `op whoami` before any credential read below. Two reasons.
 # (1) A rejected service-account token otherwise surfaces as up to 7 separate
 # per-ref failures *after* startup has begun, and because op_read returns empty
@@ -593,6 +622,10 @@ if command -v op >/dev/null 2>&1; then
   if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
      && [ -n "${CLAUDE_DOCKER_CLOUDFLARE_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --cloudflare"
+  fi
+  if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
+     && [ -n "$MEPDB_OP_REF" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --mepdb"
   fi
 fi
 if [ "$op_needed" = "1" ]; then
@@ -823,6 +856,35 @@ if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
   fi
 fi
 
+# --mepdb fallback: when POSTGRES_TEST_URL isn't pre-set on the host, read the
+# DSN from 1Password via `op read "$MEPDB_OP_REF"` (default
+# op://claude-docker/brain-test-postgres/dsn). Same shape as the
+# --ado/--jira/--supabase/--cloudflare fallbacks: a connection string lives in
+# a password manager, not in a CLI config file on disk — and unlike those, the
+# ref is defaulted (see MEPDB_OP_REF above), so the flag alone is the whole
+# setup.
+#
+# Blast radius is different in kind from the token flags: a DSN is not a
+# revocable API credential but direct database access, password included, for
+# as long as that role exists. Keep the 1Password item pointed at a disposable
+# test instance — the `_test` database the suite truncates between runs — never
+# at anything holding real data.
+#
+# Non-fatal on failure: op_read warns and the variable is skipped, so the test
+# suite then fails loudly on connect, which is more debuggable than a
+# half-injected DSN.
+if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
+   && [ -n "$MEPDB_OP_REF" ]; then
+  if command -v op >/dev/null 2>&1; then
+    mepdb_dsn=$(op_read "$MEPDB_OP_REF" || true)
+    if [ -n "$mepdb_dsn" ]; then
+      POSTGRES_TEST_URL="$mepdb_dsn"
+      export POSTGRES_TEST_URL
+      ENV_ARGS+=("-e" "POSTGRES_TEST_URL")
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can install a per-host git credential helper for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -872,6 +934,7 @@ DOCKER_FLAGS=()
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
+[ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
