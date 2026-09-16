@@ -127,6 +127,24 @@ Wrapper flags:
                       to switch the 1Password path off. The value is a full
                       DSN, password included — keep it on a throwaway test
                       instance, never a database holding real data.
+  --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
+                      accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
+                      non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so
+                      Flutter/tool/e2e.sh can sign in. Host env vars when set,
+                      else 1Password for the four account fields, via
+                      CLAUDE_DOCKER_RR_E2E_OP_ITEM and
+                      CLAUDE_DOCKER_RR_E2E2_OP_ITEM. Those name an ITEM, not a
+                      field — username and password are read from each — and
+                      both default, like --mepdb's, because the flag names one
+                      project rather than a class of service:
+                        op://claude-docker/RingRecipe e2e account
+                        op://claude-docker/RingRecipe e2e2 account
+                      Set either to "" to switch its 1Password path off. The URL
+                      and anon key belong in the env file instead: neither is a
+                      secret (the anon key ships inside the deployed web bundle)
+                      and 1Password deliberately holds neither. Not folded into
+                      --supabase, which carries an account-wide Management-API
+                      PAT — a different credential, a different blast radius.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -208,6 +226,7 @@ WITH_JIRA=0
 WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
 WITH_MEPDB=0
+WITH_RR_E2E=0
 WITH_CLAUDE_AUTH=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
@@ -233,6 +252,7 @@ for arg in "$@"; do
     --supabase)     WITH_SUPABASE=1 ;;
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
+    --rr-e2e)       WITH_RR_E2E=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
@@ -414,6 +434,15 @@ fi
 # hands the value straight to its driver, so any host-side decomposition would
 # be a second representation to keep in sync.
 [ "$WITH_MEPDB" = "1" ] && ENV_VARS+=(POSTGRES_TEST_URL)
+# Six variables, two of them secret: the account passwords. The emails are not
+# secret but come from 1Password anyway (see the read block below) — the login
+# items already hold them, so one source per account beats two. The connection
+# pair is forwarded from the host env file and never read from 1Password:
+# SUPABASE_URL is a public hostname and the anon key ships inside the deployed
+# web bundle, so treating either as a secret would be theatre.
+if [ "$WITH_RR_E2E" = "1" ]; then
+  ENV_VARS+=(SUPABASE_URL SUPABASE_ANON_KEY E2E_EMAIL E2E_PASSWORD E2E2_EMAIL E2E2_PASSWORD)
+fi
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -572,6 +601,17 @@ op_read() {
 # for --gh/--glab/--ado/--jira/--supabase/--cloudflare.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
+# --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
+# read from each (username + password) and per-field vars would be four
+# settings to keep consistent for what is really two accounts. Hence the
+# _OP_ITEM suffix instead of the _OP_REF every other flag uses: the difference
+# in shape is worth marking, so a "$ref/password" further down does not read as
+# a typo. Defaulted for the same reason as --mepdb's — the flag names one
+# project's two fixed accounts rather than a class of service — and, like it,
+# with ${VAR-default} so exporting "" turns that account's 1Password path off.
+RR_E2E_OP_ITEM="${CLAUDE_DOCKER_RR_E2E_OP_ITEM-op://claude-docker/RingRecipe e2e account}"
+RR_E2E2_OP_ITEM="${CLAUDE_DOCKER_RR_E2E2_OP_ITEM-op://claude-docker/RingRecipe e2e2 account}"
+
 # Preflight: one `op whoami` before any credential read below. Two reasons.
 # (1) A rejected service-account token otherwise surfaces as up to 7 separate
 # per-ref failures *after* startup has begun, and because op_read returns empty
@@ -626,6 +666,14 @@ if command -v op >/dev/null 2>&1; then
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
     op_needed=1; op_needed_for="$op_needed_for --mepdb"
+  fi
+  # Each account is paired with its own ref so the preflight still runs when
+  # only one of the two needs a read (E2E_PASSWORD pre-set on the host, E2E2's
+  # not). Gated on the passwords: they are the fields nothing but 1Password has.
+  if [ "$WITH_RR_E2E" = "1" ] \
+     && { { [ -z "${E2E_PASSWORD:-}" ] && [ -n "$RR_E2E_OP_ITEM" ]; } \
+       || { [ -z "${E2E2_PASSWORD:-}" ] && [ -n "$RR_E2E2_OP_ITEM" ]; }; }; then
+    op_needed=1; op_needed_for="$op_needed_for --rr-e2e"
   fi
 fi
 if [ "$op_needed" = "1" ]; then
@@ -885,6 +933,45 @@ if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
   fi
 fi
 
+# Fill one --rr-e2e account field from 1Password when the host has not already
+# set it. $1 = env var to fill, $2 = op:// item ref, $3 = field name. Four
+# explicit calls rather than a table, because an op:// ref contains ':' and any
+# colon-delimited "var:ref:field" list would split in the wrong place.
+rr_e2e_fill() {
+  [ -n "${!1:-}" ] && return 0   # host env wins; ENV_VARS already forwarded it
+  [ -n "$2" ] || return 0        # ref set to "" — 1Password path switched off
+  rr_val=$(op_read "$2/$3" || true)
+  [ -n "$rr_val" ] || return 0
+  export "$1=$rr_val"
+  ENV_ARGS+=("-e" "$1")
+  unset rr_val
+}
+
+# --rr-e2e fallback: read the two RingRecipe test accounts from 1Password. Same
+# shape as the --ado/--jira/--supabase/--cloudflare fallbacks, with --mepdb's
+# defaulted ref, so the flag alone is the whole setup.
+#
+# The flag exists because the consumer cannot do the read itself: the E2Es run
+# *inside* the container, which has neither `op` nor any 1Password identity. The
+# host reads at launch and the passwords then exist only in the container's
+# process environment — which is the point, since Flutter/tool/e2e.sh has no
+# file fallback and RingRecipe's goal is no password on disk. They do still
+# reach the test process argv as --dart-define values: off-disk is what this
+# buys, not out-of-memory.
+#
+# Non-fatal per field, like every other block: op_read warns and the variable is
+# skipped. That degrades well here — e2e.sh names the variables it is missing
+# and exits 1, so a partial read points at itself instead of surfacing later as
+# a Flutter authentication error.
+if [ "$WITH_RR_E2E" = "1" ]; then
+  if command -v op >/dev/null 2>&1; then
+    rr_e2e_fill E2E_EMAIL     "$RR_E2E_OP_ITEM"  username
+    rr_e2e_fill E2E_PASSWORD  "$RR_E2E_OP_ITEM"  password
+    rr_e2e_fill E2E2_EMAIL    "$RR_E2E2_OP_ITEM" username
+    rr_e2e_fill E2E2_PASSWORD "$RR_E2E2_OP_ITEM" password
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can install a per-host git credential helper for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -935,6 +1022,7 @@ DOCKER_FLAGS=()
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
+[ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
