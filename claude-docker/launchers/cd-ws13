@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# claude-docker launcher: WS13 "Special Report" (ADO repo SBP.BNP.WS13).
+#
+# Scoped to the one repo rather than the whole ct tree. Same credentials as
+# cd-ct: Azure DevOps for the repo, Jira for its BPN/BPU tickets.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "sbp/ct/SBP.BNP.WS13"
+exec "$CD_RUN" --claude-auth --ado --jira "$ws" "$@"

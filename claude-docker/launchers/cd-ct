@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# claude-docker launcher: Control Tower (.NET / Azure DevOps + Jira).
+#
+# --jira is CT-only: this is where Jira is used. Its three env vars
+# (JIRA_USER_EMAIL / JIRA_BASE_URL / JIRA_API_TOKEN) are NOT set here —
+# run.sh loads them from ~/.config/claude-docker/env, which is deliberately
+# not a shell rc (see the comment above CD_ENV_FILE in run.sh).
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "sbp/ct"
+exec "$CD_RUN" --claude-auth --ado --jira "$ws" "$@"

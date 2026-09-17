@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# claude-docker launcher: Transamerica application assessment (Aegon).
+# sbp.gitlab + Git LFS, hence --glab.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "clients/aegon/ta-application-assessment"
+exec "$CD_RUN" --claude-auth --glab "$ws" "$@"

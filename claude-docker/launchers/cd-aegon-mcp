@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# claude-docker launcher: Aegon MCP server (Python).
+# No forge or cloud credentials — narrowest blast radius.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "clients/aegon/mcp"
+exec "$CD_RUN" --claude-auth "$ws" "$@"

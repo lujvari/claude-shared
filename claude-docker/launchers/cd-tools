@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# claude-docker launcher: self-edit the launcher tooling.
+# --tools mounts the launcher dir read-WRITE (it is read-only elsewhere), so
+# this is the session that can change run.sh and these launchers.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "tools/claude-shared"
+exec "$CD_RUN" --claude-auth --tools "$ws" "$@"

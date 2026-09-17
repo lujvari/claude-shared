@@ -6,3 +6,9 @@
 # LF for every .sh under this directory so the build / wrapper invocation
 # work regardless of the clone's autocrlf setting.
 *.sh text eol=lf
+
+# Launchers under launchers/ are extensionless on purpose — they are the
+# command names themselves (cd-ct, not cd-ct.sh), symlinked onto PATH. That
+# means they do NOT match the *.sh rule above, so lock them explicitly or
+# core.autocrlf=true hands a Windows clone a "bash\r" shebang.
+launchers/* text eol=lf
