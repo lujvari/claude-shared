@@ -61,6 +61,26 @@ ARG CHROME_FOR_TESTING_SHA256_X86_64=60a324a6e1d27b20f2035a2cdaf71641a739fe1f557
 # all. Bump alongside CHROME_FOR_TESTING_VERSION + get the sha:
 #   V=<ver>; curl -fsSL https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chromedriver-linux64.zip | sha256sum
 ARG CHROMEDRIVER_SHA256_X86_64=65dca829d176845f864b794be1ecdd31e855f14ca9fa1eb93b2d1c0e7242abdd
+# .NET SDK 8 + 9 — both are needed, not just the newest: the SBP.* suite mixes
+# `net8.0` and `net9.0` targets, and an SDK can only build target frameworks it
+# knows, so SDK 8 alone fails restore on SBP.SIVI / SBP.BNP.WS13 with NETSDK1045
+# (which `dotnet list package --vulnerable` reports as an *empty* result, not an
+# error — a silent false-clean). Pinned + sha512 verified; Microsoft publishes
+# sha512 (not sha256) for these tarballs. Bump + get the hashes with:
+#   C=9.0; I=https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json
+#   R=$(curl -fsSL $I | jq -r '.["releases-index"][]|select(.["channel-version"]=="'$C'")|.["releases.json"]')
+#   curl -fsSL $R | jq -r '.releases[0].sdk | .version, (.files[]|select(.name|endswith("-linux-x64.tar.gz") or endswith("-linux-arm64.tar.gz"))|"\(.name) \(.hash)")'
+ARG DOTNET_SDK_8_VERSION=8.0.425
+ARG DOTNET_SDK_8_SHA512_X86_64=934b8060a7190e5909ad1fd0785db542f487b3bbf6cdd14826b02095fdd0d0394298b1634085eff302928fccc33f7c1a7253e9b87df555fc36fce819bcd2e798
+ARG DOTNET_SDK_8_SHA512_AARCH64=84a4d017d74d7aa842e981679d1b044e6be1f35b9b2b214021e30bc40871d016d29611cca373d8502ad5c890e3ad360ee698f9cf2d7a4d5a9fba102d88ba310f
+ARG DOTNET_SDK_9_VERSION=9.0.318
+ARG DOTNET_SDK_9_SHA512_X86_64=e8685293a3512178e0de1bb3c1663e31fdf9d761af705094bf833cc1ff6b9a18c543aa4141f0216503c98039c719585a6d32905b0bbb3279e93b7e7616e047c3
+ARG DOTNET_SDK_9_SHA512_AARCH64=f9c957867bddea8f82ec0459432ce7ddff8fafc846537b8003eb9f239d9c2e38586031a15954e74691c5a8cf5b3ab125d99bca85c74ca45dc8745071ca81e7ff
+# ICU runtime for .NET globalization. Versioned package name tracks the base
+# image (26.04/resolute ships libicu78); bump alongside the FROM digest — a
+# wrong name fails the build loudly, which is the intent. `libicu-dev` would
+# also work but drags in icu-devtools + libc6-dev for headers nothing uses.
+ARG ICU_PACKAGE=libicu78
 
 # Make apt runnable under --cap-drop ALL at runtime. Two pieces:
 #  1. APT::Sandbox::User "root" stops the http method from setgroups()→_apt
@@ -399,6 +419,61 @@ ENV FLUTTER_ROOT=/opt/flutter \
     PUB_CACHE=/root/.pub-cache \
     CHROME_EXECUTABLE=/opt/chrome/chrome-wrapper \
     PATH=/opt/flutter/bin:${PATH}
+
+# .NET SDK 8 + 9 (side-by-side) + the ICU runtime they need.
+#
+# Why ICU is its own concern: without libicu every single `dotnet` invocation
+# dies at startup with a `System.Console.get_OutputEncoding` stack trace that
+# names neither ICU nor globalization — the real line, `Couldn't find a valid
+# ICU package installed on the system`, is buried. Cost ~35 MB; the alternative
+# (DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1) silently changes culture-sensitive
+# behaviour, so culture tests would pass here and fail in CI.
+#
+# Why the tarball and not dotnet-install.sh: the script's own `tar` step fails
+# on a bind-mounted workspace with `Cannot change ownership to uid 2001`, which
+# is why per-session hand-installs kept being needed. `--no-same-owner
+# --no-same-permissions` is what makes extraction filesystem-independent.
+#
+# Both SDKs unpack into one DOTNET_ROOT: that is .NET's supported side-by-side
+# layout (sdk/<ver>/ and shared/<fx>/<ver>/ merge), and it gives runtimes 8 and 9
+# as well, so `dotnet test` can execute net8.0 and net9.0 assemblies.
+#
+# Under /opt, not /root: the claude-code-root named volume masks /root at
+# runtime. The NuGet package cache is deliberately left at its default
+# (~/.nuget/packages) so downloads DO land in that volume and persist between
+# runs; only the SDK itself is baked.
+#
+# Placed after the Flutter/Chrome blocks so adding it doesn't invalidate any of
+# the heavy layers above.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends "${ICU_PACKAGE}" \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  RID=linux-x64;   SHA8="${DOTNET_SDK_8_SHA512_X86_64}";  SHA9="${DOTNET_SDK_9_SHA512_X86_64}" ;; \
+      aarch64) RID=linux-arm64; SHA8="${DOTNET_SDK_8_SHA512_AARCH64}"; SHA9="${DOTNET_SDK_9_SHA512_AARCH64}" ;; \
+      *) echo "Unsupported arch for .NET SDK: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /opt/dotnet; \
+    for spec in "${DOTNET_SDK_8_VERSION}:${SHA8}" "${DOTNET_SDK_9_VERSION}:${SHA9}"; do \
+      VER="${spec%%:*}"; SHA="${spec##*:}"; \
+      curl -fsSL "https://builds.dotnet.microsoft.com/dotnet/Sdk/${VER}/dotnet-sdk-${VER}-${RID}.tar.gz" \
+        -o /tmp/dotnet-sdk.tar.gz; \
+      echo "${SHA}  /tmp/dotnet-sdk.tar.gz" | sha512sum -c -; \
+      tar -xzf /tmp/dotnet-sdk.tar.gz -C /opt/dotnet --no-same-owner --no-same-permissions; \
+      rm /tmp/dotnet-sdk.tar.gz; \
+    done; \
+    ln -s /opt/dotnet/dotnet /usr/local/bin/dotnet
+
+# DOTNET_ROOT is what `dotnet` and MSBuild use to locate the SDK; /root/.dotnet/tools
+# is where `dotnet tool install -g` puts shims (inside the named volume, so
+# globally-installed tools survive restarts). Telemetry off and NOLOGO on for the
+# same reason as elsewhere: no phoning home from a sandbox, and no first-run
+# banner polluting agent transcripts.
+ENV DOTNET_ROOT=/opt/dotnet \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    PATH=/opt/dotnet:/root/.dotnet/tools:${PATH}
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required

@@ -2,7 +2,7 @@
 
 Hardened Docker container for running Claude Code. Filesystem access is scoped to the directories you pass in; your host statusline, skills, agents, and commands come along via read-only bind-mounts.
 
-Bundled CLIs on the default PATH: `claude`, `gh`, `glab`, `aws` (v2), `az`, `openspec`, `uv`, `uvx`, `pnpm`, `pnpx`, `tfenv`, `tofuenv`, `flutter`, `dart`, `chromedriver`. The Flutter SDK is web-first: web is enabled and its engine artifacts are precached at build (offline-ready), a headless Chrome for Testing is bundled and wired via `CHROME_EXECUTABLE` for `flutter test --platform chrome` / web runs, a version-matched `chromedriver` is on PATH so `flutter drive` can run `integration_test/` targets, and the mobile engine artifacts are pruned to keep the image lean (the bundled Android SDK/Gradle still work, but `flutter build apk` re-fetches its engine at first use). See [Credential opt-in](#credential-opt-in) for `gh` / `glab` / `aws` / `tfe` / `tofu` / `ado`; `openspec`, the package managers (`uv`/`uvx`/`pnpm`/`pnpx`), and the version managers (`tfenv`/`tofuenv`) themselves need no flags.
+Bundled CLIs on the default PATH: `claude`, `gh`, `glab`, `aws` (v2), `az`, `openspec`, `uv`, `uvx`, `pnpm`, `pnpx`, `tfenv`, `tofuenv`, `flutter`, `dart`, `chromedriver`, `dotnet`. The Flutter SDK is web-first: web is enabled and its engine artifacts are precached at build (offline-ready), a headless Chrome for Testing is bundled and wired via `CHROME_EXECUTABLE` for `flutter test --platform chrome` / web runs, a version-matched `chromedriver` is on PATH so `flutter drive` can run `integration_test/` targets, and the mobile engine artifacts are pruned to keep the image lean (the bundled Android SDK/Gradle still work, but `flutter build apk` re-fetches its engine at first use). The .NET SDK ships **both 8 and 9** side by side (with their runtimes), because an SDK can only build target frameworks it knows and real solutions mix `net8.0` and `net9.0` — SDK 8 alone fails `net9.0` restore with `NETSDK1045`, which `dotnet list package --vulnerable` reports as an empty result rather than an error; the ICU runtime is baked in alongside it, without which every `dotnet` call dies at startup with a misleading `System.Console.get_OutputEncoding` stack (see [.NET and private NuGet feeds](#net-and-private-nuget-feeds)). See [Credential opt-in](#credential-opt-in) for `gh` / `glab` / `aws` / `tfe` / `tofu` / `ado`; `openspec`, the package managers (`uv`/`uvx`/`pnpm`/`pnpx`), and the version managers (`tfenv`/`tofuenv`) themselves need no flags.
 
 ## Install
 
@@ -276,6 +276,31 @@ A working scope set (git pull/push + `glab mr`/tag/work-item flows across all yo
 - **Project Planning:** `Work Item`: Create, Delete, Read, Update — for issue/work-item ops via `glab`/API.
 
 Leave the **User** and **Global** permission blocks empty. Absolute minimum for a read-only `git pull` is just `Code` (Read); the rest enable the everyday push/MR/tag/issue workflow so you don't have to re-mint. Note the expiry date GitLab forces (usually ≤1 year) — re-mint into the same 1P item to rotate.
+
+### .NET and private NuGet feeds
+
+`dotnet` is on PATH with SDKs 8 and 9 under `DOTNET_ROOT=/opt/dotnet`, and `dotnet tool install -g` shims land in `~/.dotnet/tools`. The package cache stays at its default `~/.nuget/packages`, which lives in the `claude-code-root` named volume, so a restore is paid once per volume rather than once per container.
+
+Nothing extra is needed for public feeds. For a private Azure DevOps Artifacts feed, pair `--ado` (which already puts the PAT in the container as `AZURE_DEVOPS_EXT_PAT`) with a user-level NuGet config that **references the variable instead of storing the token**:
+
+```bash
+# inside the container, once per named volume
+mkdir -p ~/.nuget/NuGet
+cat > ~/.nuget/NuGet/NuGet.Config <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSourceCredentials>
+    <!-- element name must match the <add key="..."> of the source in the repo's nuget.config -->
+    <MyFeed>
+      <add key="Username" value="pat" />
+      <add key="ClearTextPassword" value="%AZURE_DEVOPS_EXT_PAT%" />
+    </MyFeed>
+  </packageSourceCredentials>
+</configuration>
+XML
+```
+
+NuGet expands `%VAR%` at read time, so no token is written to disk. It has to be the **user-level** config (`~/.nuget/NuGet/NuGet.Config`), not one passed with `--configfile`: `dotnet list package --vulnerable` ignores `--configfile`, so a repo-local credentials file leaves exactly that command unauthenticated.
 
 ### Terraform Cloud workflow
 
