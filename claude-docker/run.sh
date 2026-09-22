@@ -115,6 +115,20 @@ Wrapper flags:
                       host browser and would persist in the container volume,
                       so token-only is the whole auth path. Run wrangler as
                       `npx wrangler@3`: v4 needs Node >=22, image has 20.
+  --openrouter        Opt in to OpenRouter: forward OPENROUTER_API_KEY so
+                      in-container scripts can reach the OpenRouter API. Host
+                      env var when set, else 1Password via
+                      CLAUDE_DOCKER_OPENROUTER_OP_REF (`op read` on host). No
+                      mount and no CLI fallback: OpenRouter ships no CLI, so
+                      there is no on-disk login to read and the token is the
+                      whole auth path — set the op-ref (or an explicit
+                      OPENROUTER_API_KEY) or --openrouter has no OpenRouter
+                      auth. Point it at a LOW-CAP dev key. Anything forwarded
+                      into a container shows up in host process listings and
+                      can reach shell history and session transcripts, so the
+                      key a deployed Worker uses must be a SEPARATE key that
+                      never enters a sandbox: a leak here then costs one cheap
+                      rotation, not a production rotation plus a redeploy.
   --mepdb             Opt in to the myEntryPoint test Postgres: forward
                       POSTGRES_TEST_URL so the in-container test suite can
                       reach the brain test database. Host env var when set,
@@ -225,6 +239,7 @@ WITH_ADO=0
 WITH_JIRA=0
 WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
+WITH_OPENROUTER=0
 WITH_MEPDB=0
 WITH_RR_E2E=0
 WITH_CLAUDE_AUTH=0
@@ -251,6 +266,7 @@ for arg in "$@"; do
     --jira)         WITH_JIRA=1 ;;
     --supabase)     WITH_SUPABASE=1 ;;
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
+    --openrouter)   WITH_OPENROUTER=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
@@ -429,6 +445,11 @@ fi
 # because wrangler needs it to disambiguate when the token spans more than one
 # account; unset on the host simply means nothing is forwarded.
 [ "$WITH_CLOUDFLARE" = "1" ] && ENV_VARS+=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)
+# One variable, and all of it secret: an OpenRouter key is a bearer token with
+# no non-secret companion to forward beside it — the account, the model
+# allowlist and the spending cap are all attributes of the key itself. That is
+# also why the cap is the containment mechanism here; see the read block below.
+[ "$WITH_OPENROUTER" = "1" ] && ENV_VARS+=(OPENROUTER_API_KEY)
 # One variable, and all of it secret: a Postgres DSN carries user, password,
 # host and database in a single string. Nothing is split out — the test suite
 # hands the value straight to its driver, so any host-side decomposition would
@@ -598,7 +619,7 @@ op_read() {
 # configure and requiring the env var would only be ceremony. `${VAR-default}`
 # without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
 # turns the 1Password path off entirely, matching how an unset ref disables it
-# for --gh/--glab/--ado/--jira/--supabase/--cloudflare.
+# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
@@ -662,6 +683,10 @@ if command -v op >/dev/null 2>&1; then
   if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
      && [ -n "${CLAUDE_DOCKER_CLOUDFLARE_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --cloudflare"
+  fi
+  if [ "$WITH_OPENROUTER" = "1" ] && [ -z "${OPENROUTER_API_KEY:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_OPENROUTER_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --openrouter"
   fi
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
@@ -904,6 +929,38 @@ if [ "$WITH_CLOUDFLARE" = "1" ] && [ -z "${CLOUDFLARE_API_TOKEN:-}" ] \
   fi
 fi
 
+# --openrouter fallback: when OPENROUTER_API_KEY isn't pre-set on the host, read
+# it from 1Password via `op read "$CLAUDE_DOCKER_OPENROUTER_OP_REF"`. Same shape
+# as --glab's, and deliberately with no more than that: host env var or op-ref,
+# nothing else. Unlike --gh there is no CLI fallback omitted on purpose here —
+# OpenRouter ships no CLI at all, so no on-disk login exists that could become a
+# silent second token source.
+#
+# Forward a LOW-CAP DEV key, never the one a deployed Worker uses. The value
+# reaches the container as `docker run -e`, so it is visible in host process
+# listings and can land in shell history or a session transcript; the per-key
+# spending cap in the OpenRouter console is what bounds that exposure, and caps
+# are per key, so the cap and the blast radius only line up when the container
+# key is its own key. Keep the production key out of every container: Cloudflare
+# Worker secrets are write-only (`wrangler secret put` sets and overwrites but
+# never reads back), so 1Password is that key's only record and rotating it
+# means a redeploy as well.
+#
+# Non-fatal on failure: op missing, not signed in, or item absent — op_read
+# warns and the credential is skipped, so OpenRouter then answers 401, which is
+# more debuggable than a half-injected key.
+if [ "$WITH_OPENROUTER" = "1" ] && [ -z "${OPENROUTER_API_KEY:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_OPENROUTER_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    openrouter_key=$(op_read "$CLAUDE_DOCKER_OPENROUTER_OP_REF" || true)
+    if [ -n "$openrouter_key" ]; then
+      OPENROUTER_API_KEY="$openrouter_key"
+      export OPENROUTER_API_KEY
+      ENV_ARGS+=("-e" "OPENROUTER_API_KEY")
+    fi
+  fi
+fi
+
 # --mepdb fallback: when POSTGRES_TEST_URL isn't pre-set on the host, read the
 # DSN from 1Password via `op read "$MEPDB_OP_REF"` (default
 # op://claude-docker/brain-test-postgres/dsn). Same shape as the
@@ -1021,6 +1078,7 @@ DOCKER_FLAGS=()
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
+[ "$WITH_OPENROUTER" = "1" ] && DOCKER_FLAGS+=("openrouter")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")

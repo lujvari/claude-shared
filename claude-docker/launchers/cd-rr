@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # claude-docker launcher: RingRecipe (Flutter + Supabase + CF Pages/Workers).
 # --rr-e2e forwards both live test accounts so tool/e2e.sh can sign in.
+# --openrouter forwards the low-cap openrouter-dev key; the Worker's production
+# key is a separate key and never enters a container.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "laslo/ringrecipe"
-exec "$CD_RUN" --claude-auth --gh --supabase --cloudflare --rr-e2e "$ws" "$@"
+exec "$CD_RUN" --claude-auth --gh --supabase --cloudflare --openrouter --rr-e2e "$ws" "$@"
