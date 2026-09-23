@@ -129,6 +129,18 @@ Wrapper flags:
                       key a deployed Worker uses must be a SEPARATE key that
                       never enters a sandbox: a leak here then costs one cheap
                       rotation, not a production rotation plus a redeploy.
+  --sonar             Opt in to SonarCloud: forward SONAR_TOKEN (plus the
+                      non-secret SONAR_HOST_URL when set) so in-container
+                      scripts can read quality-gate status and measures over
+                      the Web API. Host env var when set, else 1Password via
+                      CLAUDE_DOCKER_SONAR_OP_REF (`op read` on host). No mount
+                      and no CLI fallback: sonar-scanner takes its token from
+                      the environment or a CLI argument and writes no login
+                      file, so there is no on-disk second source. Mint a
+                      SonarCloud USER token, not a project analysis token —
+                      analysis tokens are bound to one project and 404 on
+                      every other, which is indistinguishable from an
+                      unauthorized read of a private project.
   --mepdb             Opt in to the myEntryPoint test Postgres: forward
                       POSTGRES_TEST_URL so the in-container test suite can
                       reach the brain test database. Host env var when set,
@@ -240,6 +252,7 @@ WITH_JIRA=0
 WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
 WITH_OPENROUTER=0
+WITH_SONAR=0
 WITH_MEPDB=0
 WITH_RR_E2E=0
 WITH_CLAUDE_AUTH=0
@@ -267,6 +280,7 @@ for arg in "$@"; do
     --supabase)     WITH_SUPABASE=1 ;;
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
     --openrouter)   WITH_OPENROUTER=1 ;;
+    --sonar)        WITH_SONAR=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
@@ -450,6 +464,12 @@ fi
 # allowlist and the spending cap are all attributes of the key itself. That is
 # also why the cap is the containment mechanism here; see the read block below.
 [ "$WITH_OPENROUTER" = "1" ] && ENV_VARS+=(OPENROUTER_API_KEY)
+# Only the token is a secret: SONAR_HOST_URL is a public endpoint, and unset
+# simply means the caller targets https://sonarcloud.io. It rides along so the
+# same flag can point at a self-hosted SonarQube. There is no narrower scope to
+# forward beside the token — a SonarCloud user token carries whatever its
+# minting account can see, organisation-wide.
+[ "$WITH_SONAR" = "1" ] && ENV_VARS+=(SONAR_TOKEN SONAR_HOST_URL)
 # One variable, and all of it secret: a Postgres DSN carries user, password,
 # host and database in a single string. Nothing is split out — the test suite
 # hands the value straight to its driver, so any host-side decomposition would
@@ -575,6 +595,14 @@ OP_READ_TIMEOUT="${CLAUDE_DOCKER_OP_TIMEOUT:-5}"
 if command -v timeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=timeout
 elif command -v gtimeout >/dev/null 2>&1; then OP_TIMEOUT_BIN=gtimeout
 else OP_TIMEOUT_BIN=""; fi
+# Every failed op_read appends its op:// ref here, one per line. A file rather
+# than a variable because each call site runs op_read inside a $(...) subshell,
+# which cannot write back to the parent. The gate just before `docker run`
+# turns a non-empty file into a hard abort: see the comment there for why a
+# warning alone was not enough.
+OP_FAIL_LOG="${TMPDIR:-/tmp}/claude-docker-op-failed.$$"
+rm -f "$OP_FAIL_LOG"
+
 op_read() {
   # Preflight below found the token unusable — skip the read entirely rather
   # than emit an identical failure for every ref.
@@ -605,6 +633,7 @@ op_read() {
       [ -n "$op_err" ] && echo "claude-docker:   op: $op_err" >&2
       echo "claude-docker:   hint: run 'op whoami' — a (403) here means the service-account token is expired/revoked, not a network fault." >&2
     fi
+    printf '%s\n' "$1" >> "$OP_FAIL_LOG"
     return 1
   fi
   rm -f "$op_errf"
@@ -619,7 +648,7 @@ op_read() {
 # configure and requiring the env var would only be ceremony. `${VAR-default}`
 # without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
 # turns the 1Password path off entirely, matching how an unset ref disables it
-# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter.
+# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
@@ -655,7 +684,12 @@ RR_E2E2_OP_ITEM="${CLAUDE_DOCKER_RR_E2E2_OP_ITEM-op://claude-docker/RingRecipe e
 OP_PREFLIGHT_OK=1
 op_needed=0
 op_needed_for=""
-if command -v op >/dev/null 2>&1; then
+# Deliberately NOT gated on `command -v op`: with op absent, every credential
+# block below skips in total silence (each carries its own `if command -v op`)
+# and the container comes up with nothing injected and nothing said. Survey
+# what op would have been needed for first, then treat a missing binary
+# exactly like a failed preflight.
+{
   if [ "$WITH_AWS" = "1" ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
      && [ -n "${CLAUDE_DOCKER_AWS_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --aws"
@@ -688,6 +722,10 @@ if command -v op >/dev/null 2>&1; then
      && [ -n "${CLAUDE_DOCKER_OPENROUTER_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --openrouter"
   fi
+  if [ "$WITH_SONAR" = "1" ] && [ -z "${SONAR_TOKEN:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_SONAR_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --sonar"
+  fi
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
     op_needed=1; op_needed_for="$op_needed_for --mepdb"
@@ -700,8 +738,19 @@ if command -v op >/dev/null 2>&1; then
        || { [ -z "${E2E2_PASSWORD:-}" ] && [ -n "$RR_E2E2_OP_ITEM" ]; }; }; then
     op_needed=1; op_needed_for="$op_needed_for --rr-e2e"
   fi
+}
+# op missing while a flag needs it. Nothing below would say a word, so say it
+# here, with the same verdict and the same escape hatch as a failed preflight.
+if [ "$op_needed" = "1" ] && ! command -v op >/dev/null 2>&1; then
+  echo "claude-docker: the 1Password CLI ('op') is not on PATH — credentials for${op_needed_for} cannot be resolved." >&2
+  if [ "${CLAUDE_DOCKER_OP_OPTIONAL:-0}" = "1" ]; then
+    echo "claude-docker:   CLAUDE_DOCKER_OP_OPTIONAL=1 set — launching anyway; the flags above will have no credentials." >&2
+  else
+    echo "claude-docker:   Aborting before launch. Install the 1Password CLI, or re-run with CLAUDE_DOCKER_OP_OPTIONAL=1 to start without these credentials." >&2
+    exit 1
+  fi
 fi
-if [ "$op_needed" = "1" ]; then
+if [ "$op_needed" = "1" ] && command -v op >/dev/null 2>&1; then
   op_pf_errf="${TMPDIR:-/tmp}/claude-docker-op-preflight.$$"
   # `if cmd; then rc=0; else rc=$?; fi` rather than `cmd; rc=$?`: under the
   # `set -e` at the top of this file the bare form would abort the launcher
@@ -961,6 +1010,39 @@ if [ "$WITH_OPENROUTER" = "1" ] && [ -z "${OPENROUTER_API_KEY:-}" ] \
   fi
 fi
 
+# --sonar fallback: when SONAR_TOKEN isn't pre-set on the host, read it from
+# 1Password via `op read "$CLAUDE_DOCKER_SONAR_OP_REF"`. Same shape as
+# --glab/--openrouter: host env var or op-ref, nothing else. No CLI fallback is
+# omitted on purpose here — sonar-scanner reads its token from the environment
+# or a command-line argument and writes no login file, so no on-disk second
+# token source exists to read.
+#
+# Forward a USER token, never a project analysis token. Analysis tokens are
+# bound to a single project and answer 404 "Project doesn't exist" for any
+# other — the same response SonarCloud gives an unauthorized caller asking
+# about a private project, because it will not confirm that one exists. The two
+# are indistinguishable from the response alone, so the wrong token type reads
+# as a missing project rather than as an auth problem. That equivalence also
+# sets the blast radius in the other direction: a user token is its account's
+# access to the whole organisation, so mint it from an account whose visibility
+# matches what the container should be able to see.
+#
+# Non-fatal on failure: op missing, not signed in, or item absent — op_read
+# warns and the credential is skipped, so the Web API then answers 401 (or that
+# same 404 on a private project), which is more debuggable than a half-injected
+# token.
+if [ "$WITH_SONAR" = "1" ] && [ -z "${SONAR_TOKEN:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_SONAR_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    sonar_tok=$(op_read "$CLAUDE_DOCKER_SONAR_OP_REF" || true)
+    if [ -n "$sonar_tok" ]; then
+      SONAR_TOKEN="$sonar_tok"
+      export SONAR_TOKEN
+      ENV_ARGS+=("-e" "SONAR_TOKEN")
+    fi
+  fi
+fi
+
 # --mepdb fallback: when POSTGRES_TEST_URL isn't pre-set on the host, read the
 # DSN from 1Password via `op read "$MEPDB_OP_REF"` (default
 # op://claude-docker/brain-test-postgres/dsn). Same shape as the
@@ -1079,6 +1161,7 @@ DOCKER_FLAGS=()
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
 [ "$WITH_OPENROUTER" = "1" ] && DOCKER_FLAGS+=("openrouter")
+[ "$WITH_SONAR" = "1" ]    && DOCKER_FLAGS+=("sonar")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
@@ -1104,7 +1187,7 @@ mkdir -p "$stage_root"
 stage=$(mktemp -d "$stage_root/host.XXXXXX")
 # `case` instead of `[[ ]]` for bash 3.2 friendliness inside the trap string.
 # $HOME is expanded at trap execution time, * is a glob wildcard.
-trap 'case "$stage" in "$HOME/.cache/claude-docker/host."*) rm -rf "$stage" ;; esac' EXIT
+trap 'rm -f "$OP_FAIL_LOG"; case "$stage" in "$HOME/.cache/claude-docker/host."*) rm -rf "$stage" ;; esac' EXIT
 
 for item in agents commands skills; do
   src="$CLAUDE_CONFIG_DIR/$item"
@@ -1243,6 +1326,80 @@ fi
 # docker-run-options array (it carries the --tmpfs masks), so the always-
 # non-empty expansion below stays bash-3.2 / set -u safe.
 [ -n "$NETWORK" ] && MOUNT_ARGS+=("--network" "$NETWORK")
+
+# --- credential post-conditions: never launch a half-credentialled container
+#
+# Two gates, both here so every credential block above has finished, both with
+# the same CLAUDE_DOCKER_OP_OPTIONAL escape hatch as the preflight.
+#
+# Why this exists: on 2026-09-23 a `cd-mep` launch came up with GH_TOKEN but no
+# POSTGRES_TEST_URL. Flag parsing, the op-ref and the vault grant were all fine
+# — one `op read` had failed, op_read warned on stderr exactly as designed, and
+# Claude Code then repainted the terminal over the warning. From inside the
+# container a skipped credential is indistinguishable from one that was never
+# asked for, and the myEntryPoint suite answered by *skipping* 329 Postgres
+# tests, which reads as a pass. Same reasoning as that repo's BRAIN_REQUIRE_DB=1
+# switch: a silent skip is worse than a hard failure.
+#
+# (1) $OP_FAIL_LOG catches every op_read that returned non-zero.
+# (2) The end-state assertion catches a flag that injected nothing *without* an
+#     op_read failure — e.g. its *_OP_REF deliberately set to "" and no host env
+#     var behind it. Asserting the end state beats trusting the path to it.
+#
+# --aws and --tfe/--tofu are deliberately NOT asserted: both also carry
+# credentials by read-only mount (~/.aws/config + ~/.aws/sso,
+# ~/.terraform.d/credentials.tfrc.json), so an empty env var is the normal
+# SSO / on-disk-token case there rather than a failure.
+cred_missing=""
+# $1 = flag as the user types it, $2.. = env vars of which ANY ONE non-empty
+# satisfies the flag (--gh takes either token name; --rr-e2e allows one of its
+# two accounts to be switched off).
+cred_require() {
+  cred_flag=$1; shift
+  for cred_v in "$@"; do
+    [ -n "${!cred_v:-}" ] && return 0
+  done
+  cred_missing="$cred_missing  $cred_flag - none of ($*) is set
+"
+  return 0
+}
+[ "$WITH_GH" = "1" ]         && cred_require --gh GH_TOKEN GITHUB_TOKEN
+[ "$WITH_GLAB" = "1" ]       && cred_require --glab GITLAB_TOKEN
+[ "$WITH_ADO" = "1" ]        && cred_require --ado AZURE_DEVOPS_EXT_PAT
+[ "$WITH_JIRA" = "1" ]       && cred_require --jira JIRA_API_TOKEN
+[ "$WITH_SUPABASE" = "1" ]   && cred_require --supabase SUPABASE_ACCESS_TOKEN
+[ "$WITH_CLOUDFLARE" = "1" ] && cred_require --cloudflare CLOUDFLARE_API_TOKEN
+[ "$WITH_OPENROUTER" = "1" ] && cred_require --openrouter OPENROUTER_API_KEY
+[ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
+[ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
+[ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
+
+launch_blocked=0
+if [ -s "$OP_FAIL_LOG" ]; then
+  launch_blocked=1
+  echo "claude-docker: 1Password did not deliver these refs (see the per-ref error above):" >&2
+  while IFS= read -r cred_ref; do
+    echo "claude-docker:   $cred_ref" >&2
+  done < "$OP_FAIL_LOG"
+fi
+if [ -n "$cred_missing" ]; then
+  launch_blocked=1
+  echo "claude-docker: these flags were accepted but injected nothing:" >&2
+  printf '%s' "$cred_missing" | while IFS= read -r cred_line; do
+    echo "claude-docker: $cred_line" >&2
+  done
+fi
+if [ "$launch_blocked" = "1" ]; then
+  if [ "${CLAUDE_DOCKER_OP_OPTIONAL:-0}" = "1" ]; then
+    echo "claude-docker:   CLAUDE_DOCKER_OP_OPTIONAL=1 set - launching anyway; the container will be missing the credentials above." >&2
+  else
+    echo "claude-docker:   Aborting before launch. A container that starts without a credential it was asked for looks identical to a working one from the inside." >&2
+    echo "claude-docker:   A single failed read is often a transient 'op read' timeout - just re-run, or raise CLAUDE_DOCKER_OP_TIMEOUT (currently ${OP_READ_TIMEOUT}s) if it persists." >&2
+    echo "claude-docker:   To start without these credentials anyway: CLAUDE_DOCKER_OP_OPTIONAL=1" >&2
+    exit 1
+  fi
+fi
+# --- end credential post-conditions ---
 
 docker run --rm -it \
   --security-opt no-new-privileges \
