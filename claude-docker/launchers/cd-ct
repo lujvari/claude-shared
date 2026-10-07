@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# claude-docker launcher: Control Tower (.NET / Azure DevOps + Jira).
+# claude-docker launcher: Control Tower (.NET / Azure DevOps + Jira + SonarCloud).
 #
 # --jira is CT-only: this is where Jira is used. Its three env vars
 # (JIRA_USER_EMAIL / JIRA_BASE_URL / JIRA_API_TOKEN) are NOT set here —
 # run.sh loads them from ~/.config/claude-docker/env, which is deliberately
 # not a shell rc (see the comment above CD_ENV_FILE in run.sh).
+#
+# --sonar is here for the same reason: the ten SBP.* SonarCloud projects are
+# private to anonymous reads, so quality-gate status is unreadable without a
+# token — and a private project answers 404, not 401, so an unauthenticated
+# session cannot even tell that the project exists. SONAR_TOKEN comes from
+# CLAUDE_DOCKER_SONAR_OP_REF in the same env file.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "sbp/ct"
-exec "$CD_RUN" --claude-auth --ado --jira "$ws" "$@"
+exec "$CD_RUN" --claude-auth --ado --jira --sonar "$ws" "$@"
