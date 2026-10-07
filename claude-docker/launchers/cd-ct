@@ -12,19 +12,11 @@
 # session cannot even tell that the project exists. SONAR_TOKEN comes from
 # CLAUDE_DOCKER_SONAR_OP_REF in the same env file.
 #
-# --admin (launcher-only, opt-in per session) becomes run.sh's --ado-admin:
-# it forwards the elevated PAT as AZURE_DEVOPS_ADMIN_PAT, from
+# --ado-admin is NOT baked in: pass it per session (cd-ct --yolo --ado-admin)
+# when the work needs the elevated PAT, forwarded as AZURE_DEVOPS_ADMIN_PAT from
 # CLAUDE_DOCKER_ADO_ADMIN_OP_REF, for changes like service accounts and service
 # connections. Off by default so a routine CT session never holds admin rights.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "sbp/ct"
-# Rewrite only before `--`: everything after it belongs to claude.
-args=()
-saw_sep=0
-for a in "$@"; do
-  if [ "$saw_sep" = "0" ] && [ "$a" = "--admin" ]; then a=--ado-admin; fi
-  [ "$a" = "--" ] && saw_sep=1
-  args+=("$a")
-done
-exec "$CD_RUN" --claude-auth --ado --jira --sonar "$ws" ${args[@]+"${args[@]}"}
+exec "$CD_RUN" --claude-auth --ado --jira --sonar "$ws" "$@"
