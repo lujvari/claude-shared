@@ -95,6 +95,15 @@ Wrapper flags:
                       dev.azure.com (token read at auth time, never in the
                       URL) so in-container `git clone` against private Azure
                       Repos works without prompting.
+  --ado-admin         Opt in to an ELEVATED Azure DevOps PAT: forward
+                      AZURE_DEVOPS_ADMIN_PAT alongside (not instead of)
+                      --ado's AZURE_DEVOPS_EXT_PAT, for admin work such as
+                      service connections and service accounts. Host env var
+                      when set, else 1Password via
+                      CLAUDE_DOCKER_ADO_ADMIN_OP_REF (`op read` on host).
+                      Deliberately NOT wired into git or `az devops`: callers
+                      must name it explicitly, so routine calls keep the
+                      everyday PAT. Usually paired with --ado.
   --jira              Opt in to Atlassian Jira (Cloud): forward
                       JIRA_USER_EMAIL / JIRA_BASE_URL / JIRA_API_TOKEN so
                       in-container scripts can hit the Jira REST API
@@ -248,6 +257,7 @@ WITH_GLAB=0
 WITH_TFE=0
 WITH_TOFU=0
 WITH_ADO=0
+WITH_ADO_ADMIN=0
 WITH_JIRA=0
 WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
@@ -276,6 +286,7 @@ for arg in "$@"; do
     --tfe)          WITH_TFE=1 ;;
     --tofu)         WITH_TOFU=1 ;;
     --ado)          WITH_ADO=1 ;;
+    --ado-admin)    WITH_ADO_ADMIN=1 ;;
     --jira)         WITH_JIRA=1 ;;
     --supabase)     WITH_SUPABASE=1 ;;
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
@@ -445,6 +456,11 @@ if [ "$WITH_TFE" = "1" ] || [ "$WITH_TOFU" = "1" ]; then
   ENV_VARS+=(TF_TOKEN_app_terraform_io)
 fi
 [ "$WITH_ADO" = "1" ] && ENV_VARS+=(AZURE_DEVOPS_EXT_PAT)
+# A second, separately-scoped PAT under its own name rather than a swap of
+# AZURE_DEVOPS_EXT_PAT: the entrypoint's git credential helper and `az devops`
+# keep using the everyday token, and only a call that names this one on
+# purpose gets admin rights.
+[ "$WITH_ADO_ADMIN" = "1" ] && ENV_VARS+=(AZURE_DEVOPS_ADMIN_PAT)
 # JIRA_USER_EMAIL + JIRA_BASE_URL are non-secret (email + site URL); only
 # JIRA_API_TOKEN is a secret. All three are forwarded as a unit because
 # the in-container Jira REST scripts need all three to function (Basic
@@ -706,6 +722,9 @@ op_needed_for=""
      && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --ado"
   fi
+  if [ "$WITH_ADO_ADMIN" = "1" ] && [ -z "${AZURE_DEVOPS_ADMIN_PAT:-}" ]      && [ -n "${CLAUDE_DOCKER_ADO_ADMIN_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --ado-admin"
+  fi
   if [ "$WITH_JIRA" = "1" ] && [ -z "${JIRA_API_TOKEN:-}" ] \
      && [ -n "${CLAUDE_DOCKER_JIRA_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --jira"
@@ -894,6 +913,21 @@ if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
       AZURE_DEVOPS_EXT_PAT="$ado_pat"
       export AZURE_DEVOPS_EXT_PAT
       ENV_ARGS+=("-e" "AZURE_DEVOPS_EXT_PAT")
+    fi
+  fi
+fi
+
+# --ado-admin fallback: same shape as --ado above, separate PAT and op-ref
+# (e.g. CLAUDE_DOCKER_ADO_ADMIN_OP_REF="op://claude-docker/AzureDevOps PAT ADMIN/credential").
+# Kept as its own vault item so the elevated scopes can be revoked or expired
+# without touching the everyday token.
+if [ "$WITH_ADO_ADMIN" = "1" ] && [ -z "${AZURE_DEVOPS_ADMIN_PAT:-}" ]    && [ -n "${CLAUDE_DOCKER_ADO_ADMIN_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    ado_admin_pat=$(op_read "$CLAUDE_DOCKER_ADO_ADMIN_OP_REF" || true)
+    if [ -n "$ado_admin_pat" ]; then
+      AZURE_DEVOPS_ADMIN_PAT="$ado_admin_pat"
+      export AZURE_DEVOPS_ADMIN_PAT
+      ENV_ARGS+=("-e" "AZURE_DEVOPS_ADMIN_PAT")
     fi
   fi
 fi
@@ -1157,6 +1191,7 @@ DOCKER_FLAGS=()
 [ "$WITH_TFE" = "1" ]      && DOCKER_FLAGS+=("tfe")
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
 [ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
+[ "$WITH_ADO_ADMIN" = "1" ] && DOCKER_FLAGS+=("ado-admin")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
@@ -1366,6 +1401,7 @@ cred_require() {
 [ "$WITH_GH" = "1" ]         && cred_require --gh GH_TOKEN GITHUB_TOKEN
 [ "$WITH_GLAB" = "1" ]       && cred_require --glab GITLAB_TOKEN
 [ "$WITH_ADO" = "1" ]        && cred_require --ado AZURE_DEVOPS_EXT_PAT
+[ "$WITH_ADO_ADMIN" = "1" ]  && cred_require --ado-admin AZURE_DEVOPS_ADMIN_PAT
 [ "$WITH_JIRA" = "1" ]       && cred_require --jira JIRA_API_TOKEN
 [ "$WITH_SUPABASE" = "1" ]   && cred_require --supabase SUPABASE_ACCESS_TOKEN
 [ "$WITH_CLOUDFLARE" = "1" ] && cred_require --cloudflare CLOUDFLARE_API_TOKEN
