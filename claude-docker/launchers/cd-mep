@@ -2,6 +2,8 @@
 # claude-docker launcher: myEntryPoint (personal).
 # --mepdb forwards POSTGRES_TEST_URL, the brain test Postgres DSN, from
 # 1Password. That DSN carries its password — test instance only.
+# --hetzner-infra is deliberately NOT baked in: it can delete the server and
+# its backups, so add it per session for infra work (`cd-mep --hetzner-infra`).
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "myEntryPoint"

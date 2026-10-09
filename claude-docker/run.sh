@@ -180,6 +180,18 @@ Wrapper flags:
                       and 1Password deliberately holds neither. Not folded into
                       --supabase, which carries an account-wide Management-API
                       PAT — a different credential, a different blast radius.
+  --hetzner-infra     Opt in to Hetzner Cloud infrastructure changes: forward
+                      HCLOUD_TOKEN (read by the hcloud CLI and the Terraform /
+                      OpenTofu hcloud provider). Host env var when set, else
+                      1Password via CLAUDE_DOCKER_HETZNER_OP_REF, defaulted to
+                        op://claude-docker-infra/hcloud-mep/token
+                      and read with a SEPARATE service account whose token is
+                      in CLAUDE_DOCKER_HETZNER_OP_TOKEN_FILE (default
+                      ~/.config/op/infra-service-account-token), never the
+                      everyday one. Other flags still read from the everyday
+                      vault in the same launch. A Read & Write token can delete
+                      the server and its backups — use it for provisioning,
+                      firewall changes and restore drills, not daily work.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -265,6 +277,7 @@ WITH_OPENROUTER=0
 WITH_SONAR=0
 WITH_MEPDB=0
 WITH_RR_E2E=0
+WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
@@ -294,6 +307,7 @@ for arg in "$@"; do
     --sonar)        WITH_SONAR=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
+    --hetzner-infra) WITH_HETZNER_INFRA=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
     --host-net)     NETWORK=host ;;
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
@@ -500,6 +514,9 @@ fi
 if [ "$WITH_RR_E2E" = "1" ]; then
   ENV_VARS+=(SUPABASE_URL SUPABASE_ANON_KEY E2E_EMAIL E2E_PASSWORD E2E2_EMAIL E2E2_PASSWORD)
 fi
+# One variable, and all of it secret. The project is implied by the token
+# itself (Hetzner tokens are per-project), so there is no companion to forward.
+[ "$WITH_HETZNER_INFRA" = "1" ] && ENV_VARS+=(HCLOUD_TOKEN)
 # Guarded: bash 3.2 under `set -u` errors on empty-array expansion.
 if [ "${#ENV_VARS[@]}" -gt 0 ]; then
   for v in "${ENV_VARS[@]}"; do
@@ -678,6 +695,23 @@ MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgre
 RR_E2E_OP_ITEM="${CLAUDE_DOCKER_RR_E2E_OP_ITEM-op://claude-docker/RingRecipe e2e account}"
 RR_E2E2_OP_ITEM="${CLAUDE_DOCKER_RR_E2E2_OP_ITEM-op://claude-docker/RingRecipe e2e2 account}"
 
+# --hetzner-infra's op-ref and the service-account token it is read with.
+# Defaulted like --mepdb's: the flag names one Hetzner project (myEntryPoint's
+# `mep`), not a class of service.
+#
+# The ref deliberately lives OUTSIDE the claude-docker vault. That vault holds
+# only secrets that are cheap to rotate and reach disposable resources, and a
+# Read & Write Hetzner token is neither: it can delete the live server together
+# with its backups. So it sits in its own vault, readable only by a second
+# service account, and the everyday OP_SERVICE_ACCOUNT_TOKEN — which every
+# launch holds — cannot reach it. The second token is read from a pointer file
+# (0600, beside the everyday one), never from an rc export, and is set only in
+# the subshell that performs this one read. Setting the file var to "" falls
+# back to the everyday account, for a setup that grants it the infra vault
+# after all; setting the ref to "" switches the 1Password path off.
+HETZNER_OP_REF="${CLAUDE_DOCKER_HETZNER_OP_REF-op://claude-docker-infra/hcloud-mep/token}"
+HETZNER_OP_TOKEN_FILE="${CLAUDE_DOCKER_HETZNER_OP_TOKEN_FILE-${XDG_CONFIG_HOME:-$HOME/.config}/op/infra-service-account-token}"
+
 # Preflight: one `op whoami` before any credential read below. Two reasons.
 # (1) A rejected service-account token otherwise surfaces as up to 7 separate
 # per-ref failures *after* startup has begun, and because op_read returns empty
@@ -700,6 +734,7 @@ RR_E2E2_OP_ITEM="${CLAUDE_DOCKER_RR_E2E2_OP_ITEM-op://claude-docker/RingRecipe e
 OP_PREFLIGHT_OK=1
 op_needed=0
 op_needed_for=""
+op_bin_needed_for=""
 # Deliberately NOT gated on `command -v op`: with op absent, every credential
 # block below skips in total silence (each carries its own `if command -v op`)
 # and the container comes up with nothing injected and nothing said. Survey
@@ -757,11 +792,25 @@ op_needed_for=""
        || { [ -z "${E2E2_PASSWORD:-}" ] && [ -n "$RR_E2E2_OP_ITEM" ]; }; }; then
     op_needed=1; op_needed_for="$op_needed_for --rr-e2e"
   fi
+  # --hetzner-infra with its own service account needs the op binary but not
+  # the everyday token, so it joins the missing-binary check only: putting it
+  # in op_needed would let a dead everyday token abort an infra-only launch
+  # through a `op whoami` that says nothing about the account it will use.
+  # Its own token is validated by the read itself, whose failure aborts too.
+  if [ "$WITH_HETZNER_INFRA" = "1" ] && [ -z "${HCLOUD_TOKEN:-}" ] \
+     && [ -n "$HETZNER_OP_REF" ]; then
+    if [ -n "$HETZNER_OP_TOKEN_FILE" ]; then
+      op_bin_needed_for="$op_bin_needed_for --hetzner-infra"
+    else
+      op_needed=1; op_needed_for="$op_needed_for --hetzner-infra"
+    fi
+  fi
 }
 # op missing while a flag needs it. Nothing below would say a word, so say it
 # here, with the same verdict and the same escape hatch as a failed preflight.
-if [ "$op_needed" = "1" ] && ! command -v op >/dev/null 2>&1; then
-  echo "claude-docker: the 1Password CLI ('op') is not on PATH — credentials for${op_needed_for} cannot be resolved." >&2
+if { [ "$op_needed" = "1" ] || [ -n "$op_bin_needed_for" ]; } \
+   && ! command -v op >/dev/null 2>&1; then
+  echo "claude-docker: the 1Password CLI ('op') is not on PATH — credentials for${op_needed_for}${op_bin_needed_for} cannot be resolved." >&2
   if [ "${CLAUDE_DOCKER_OP_OPTIONAL:-0}" = "1" ]; then
     echo "claude-docker:   CLAUDE_DOCKER_OP_OPTIONAL=1 set — launching anyway; the flags above will have no credentials." >&2
   else
@@ -1145,6 +1194,46 @@ if [ "$WITH_RR_E2E" = "1" ]; then
   fi
 fi
 
+# --hetzner-infra fallback: read HCLOUD_TOKEN from the infra vault with the
+# infra service account (see HETZNER_OP_REF above for why it is a second one).
+# The account switch happens inside the $(...) that does the read, so the
+# exported OP_SERVICE_ACCOUNT_TOKEN dies with that subshell: every other read
+# in this launch keeps the everyday account, and nothing here forwards either
+# token into the container. OP_PREFLIGHT_OK is reset in there too, because a
+# failed everyday preflight (under CLAUDE_DOCKER_OP_OPTIONAL=1) says nothing
+# about this account.
+#
+# A missing or empty token file is a failure, not a skip: logged to
+# OP_FAIL_LOG like a failed read, so the post-condition gate aborts the launch.
+# Only the path is printed, never the file's contents.
+if [ "$WITH_HETZNER_INFRA" = "1" ] && [ -z "${HCLOUD_TOKEN:-}" ] \
+   && [ -n "$HETZNER_OP_REF" ]; then
+  if command -v op >/dev/null 2>&1; then
+    if [ -n "$HETZNER_OP_TOKEN_FILE" ] && [ ! -s "$HETZNER_OP_TOKEN_FILE" ]; then
+      echo "claude-docker: --hetzner-infra: infra service-account token file missing or empty: $HETZNER_OP_TOKEN_FILE" >&2
+      echo "claude-docker:   Paste the token of the service account that can read $HETZNER_OP_REF into that file (chmod 600)." >&2
+      printf '%s\n' "$HETZNER_OP_REF" >> "$OP_FAIL_LOG"
+    else
+      hcloud_tok=$(
+        if [ -n "$HETZNER_OP_TOKEN_FILE" ]; then
+          OP_SERVICE_ACCOUNT_TOKEN=$(tr -d '\r\n' < "$HETZNER_OP_TOKEN_FILE")
+          export OP_SERVICE_ACCOUNT_TOKEN
+          OP_PREFLIGHT_OK=1
+        fi
+        op_read "$HETZNER_OP_REF"
+      ) || true
+      if [ -n "$hcloud_tok" ]; then
+        HCLOUD_TOKEN="$hcloud_tok"
+        export HCLOUD_TOKEN
+        ENV_ARGS+=("-e" "HCLOUD_TOKEN")
+      elif [ -n "$HETZNER_OP_TOKEN_FILE" ]; then
+        echo "claude-docker:   (that read used the infra service account from $HETZNER_OP_TOKEN_FILE, not the everyday one — a 403 means that token is expired or revoked)" >&2
+      fi
+      unset hcloud_tok
+    fi
+  fi
+fi
+
 # Forward the enumerated host lists into the container so the entrypoint
 # can install a per-host git credential helper for each. When
 # empty (no config / unparseable), the entrypoint defaults to the
@@ -1199,6 +1288,7 @@ DOCKER_FLAGS=()
 [ "$WITH_SONAR" = "1" ]    && DOCKER_FLAGS+=("sonar")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
+[ "$WITH_HETZNER_INFRA" = "1" ] && DOCKER_FLAGS+=("hetzner-infra")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
 [ -n "$NETWORK" ]          && DOCKER_FLAGS+=("net:$NETWORK")
 [ "$EPHEMERAL" = "1" ]     && DOCKER_FLAGS+=("ephemeral")
@@ -1409,6 +1499,7 @@ cred_require() {
 [ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
 [ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
+[ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
 
 launch_blocked=0
 if [ -s "$OP_FAIL_LOG" ]; then
