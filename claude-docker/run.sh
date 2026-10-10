@@ -1203,7 +1203,8 @@ fi
 # failed everyday preflight (under CLAUDE_DOCKER_OP_OPTIONAL=1) says nothing
 # about this account.
 #
-# A missing or empty token file is a failure, not a skip: logged to
+# A missing or empty token file, or one without the `ops_` prefix every
+# service-account token has, is a failure, not a skip: logged to
 # OP_FAIL_LOG like a failed read, so the post-condition gate aborts the launch.
 # Only the path is printed, never the file's contents.
 if [ "$WITH_HETZNER_INFRA" = "1" ] && [ -z "${HCLOUD_TOKEN:-}" ] \
@@ -1212,6 +1213,15 @@ if [ "$WITH_HETZNER_INFRA" = "1" ] && [ -z "${HCLOUD_TOKEN:-}" ] \
     if [ -n "$HETZNER_OP_TOKEN_FILE" ] && [ ! -s "$HETZNER_OP_TOKEN_FILE" ]; then
       echo "claude-docker: --hetzner-infra: infra service-account token file missing or empty: $HETZNER_OP_TOKEN_FILE" >&2
       echo "claude-docker:   Paste the token of the service account that can read $HETZNER_OP_REF into that file (chmod 600)." >&2
+      printf '%s\n' "$HETZNER_OP_REF" >> "$OP_FAIL_LOG"
+    elif [ -n "$HETZNER_OP_TOKEN_FILE" ] \
+         && [ "$(head -c 4 "$HETZNER_OP_TOKEN_FILE")" != "ops_" ]; then
+      # Every 1Password service-account token starts with `ops_`. Anything
+      # else is almost certainly the Hetzner API token pasted into the wrong
+      # file (2026-10-10). op would only say "format is invalid", and op_read's
+      # 403 hint would then blame an expired token.
+      echo "claude-docker: --hetzner-infra: $HETZNER_OP_TOKEN_FILE does not hold a 1Password service-account token (no 'ops_' prefix)." >&2
+      echo "claude-docker:   Likely the Hetzner API token itself. Paste the infra service account's token (ops_..., ~850 chars) into that file instead." >&2
       printf '%s\n' "$HETZNER_OP_REF" >> "$OP_FAIL_LOG"
     else
       hcloud_tok=$(
