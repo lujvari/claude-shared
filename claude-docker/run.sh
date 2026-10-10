@@ -1538,7 +1538,16 @@ if [ "$launch_blocked" = "1" ]; then
 fi
 # --- end credential post-conditions ---
 
-docker run --rm -it \
+# -t only when attached to a terminal. A headless launch (`-- -p "..."` from a
+# script or an orchestrating agent) has no TTY, and docker refuses -t without
+# one: "cannot attach stdin to a TTY-enabled container because stdin is not a
+# terminal". Interactive launches are unchanged.
+DOCKER_TTY_FLAGS=-i
+if [ -t 0 ] && [ -t 1 ]; then
+  DOCKER_TTY_FLAGS=-it
+fi
+
+docker run --rm "$DOCKER_TTY_FLAGS" \
   --security-opt no-new-privileges \
   --cap-drop ALL \
   --cap-add DAC_OVERRIDE \
