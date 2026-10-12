@@ -20,6 +20,15 @@
             "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py report; fi"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -59,6 +68,15 @@
             "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py touch; fi"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -81,6 +99,17 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py stop; fi"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
+            "timeout": 10
           }
         ]
       }

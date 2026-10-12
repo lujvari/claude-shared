@@ -225,6 +225,16 @@ Wrapper flags:
   --claude-dir=PATH   Use PATH as the host Claude config dir instead of
                       ~/.claude. Affects agents, commands, skills, CLAUDE.md,
                       and statusline. Env: CLAUDE_DOCKER_CONFIG_DIR.
+  --no-bus            Skip the agent-bus mailbox mount for this launch. By
+                      default, when CLAUDE_DOCKER_BUS_DIR names an existing
+                      host dir, the box gets its OWN mailbox only:
+                      <bus>/<key> at /bus (rw) with <bus>/<key>/in over it
+                      read-only, so the box can post to the host but cannot
+                      read other boxes' mail or plant mail "from the host".
+                      <key> is the first workspace's path relative to the
+                      bus dir's parent, '/' -> '.' (laslo/ringrecipe ->
+                      laslo.ringrecipe). Also points SLACK_OUTBOX_QUEUE at
+                      /bus/.slack-outbox/queue, which the host broker watches.
 
 Separator:
   --                  Ends wrapper-flag parsing. Everything after is passed
@@ -239,6 +249,8 @@ Environment:
                            reuse this wrapper.
   CLAUDE_DOCKER_CONFIG_DIR Override the host Claude config dir (same as
                            --claude-dir=PATH).
+  CLAUDE_DOCKER_BUS_DIR    Host agent-bus dir (see --no-bus). Unset or
+                           missing: no mailbox is mounted.
 
 Credentials are off by default; combine opt-ins as needed:
   claude-docker --aws --gh ~/repo
@@ -279,6 +291,7 @@ WITH_MEPDB=0
 WITH_RR_E2E=0
 WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
+WITH_BUS=1
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
@@ -313,7 +326,8 @@ for arg in "$@"; do
     --iterm)        CLAUDE_DOCKER_TMUX=cc ;;
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
-    -*)             echo "claude-docker: unknown flag '$arg' (use -- to pass flags to claude)" >&2; exit 1 ;;
+    --no-bus)       WITH_BUS=0 ;;
+    -*)            echo "claude-docker: unknown flag '$arg' (use -- to pass flags to claude)" >&2; exit 1 ;;
     *)              WORKSPACES+=("$arg") ;;
   esac
 done
@@ -377,6 +391,38 @@ for ws in "${WORKSPACES[@]}"; do
   CONTAINER_PATHS+=("/workspaces/$name")
 done
 CWD="${CONTAINER_PATHS[0]}"
+
+# Agent bus: give the box its own mailbox, and only its own. Hub shape — the
+# host sees every <bus>/<key>, a box sees one — so a box's sender identity is
+# the directory the host chose, not anything the box claims, and one box can
+# never read another's mail (ASR and Aegon boxes stay apart). in/ is overlaid
+# read-only (deeper bind wins, as with the launcher overlay above) so a
+# compromised session cannot plant "host" mail for the next one. Applies under
+# --ro and --ephemeral too: the bus is not the workspace. Gated on an existing
+# CLAUDE_DOCKER_BUS_DIR, so a wrapper without one behaves exactly as before.
+BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-}"
+if [ "$WITH_BUS" = "1" ] && [ -n "$BUS_DIR" ]; then
+  if [ -d "$BUS_DIR" ]; then
+    BUS_DIR=$(cd "$BUS_DIR" && pwd)
+    bus_parent=$(dirname "$BUS_DIR")
+    bus_ws="${SEEN_PATHS[0]}"
+    case "$bus_ws" in
+      "$bus_parent"/*) bus_rel="${bus_ws#"$bus_parent"/}"; bus_key="${bus_rel//\//.}" ;;
+      *)               bus_key=$(basename "$bus_ws") ;;
+    esac
+    case "$bus_key" in
+      *[!A-Za-z0-9._-]*|""|.*)
+        echo "claude-docker: agent-bus key '$bus_key' is not a safe name; launching without a mailbox" >&2 ;;
+      *)
+        mkdir -p "$BUS_DIR/$bus_key/in" "$BUS_DIR/$bus_key/out"
+        MOUNT_ARGS+=("-v" "$BUS_DIR/$bus_key:/bus" "-v" "$BUS_DIR/$bus_key/in:/bus/in:ro")
+        ENV_ARGS+=("-e" "AGENT_BUS_DIR=/bus" "-e" "AGENT_BUS_SELF=$bus_key"
+                   "-e" "SLACK_OUTBOX_QUEUE=/bus/.slack-outbox/queue") ;;
+    esac
+  else
+    echo "claude-docker: CLAUDE_DOCKER_BUS_DIR=$BUS_DIR does not exist; launching without a mailbox" >&2
+  fi
+fi
 
 # --glab deliberately does NOT mount the host glab-cli config. GitLab auth
 # in-container comes solely from GITLAB_TOKEN (host env or the

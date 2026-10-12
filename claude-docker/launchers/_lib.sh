@@ -14,6 +14,11 @@ _cd_lib_dir=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 CD_RUN="$_cd_lib_dir/../run.sh"
 DEV=$(cd "$_cd_lib_dir/../../../.." && pwd)
 
+# Every launched box gets its own agent-bus mailbox under the dev root (see
+# --no-bus in run.sh). Exported, not passed as a flag, so run.sh stays usable
+# without it; an explicit CLAUDE_DOCKER_BUS_DIR still wins.
+export CLAUDE_DOCKER_BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-$DEV/.agent-bus}"
+
 # cd_workspace <path-relative-to-dev-root>
 #
 # Sets $ws to the absolute workspace path, failing loudly when it is missing.
