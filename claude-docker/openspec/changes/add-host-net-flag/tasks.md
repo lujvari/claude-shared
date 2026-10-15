@@ -19,8 +19,8 @@ Not run as part of this retroactive record; the eed753a commit message records n
 
 ## 4. Documentation
 
-- [ ] 4.1 README row for `--host-net` and `CLAUDE_DOCKER_NETWORK` (not done)
-- [ ] 4.2 README statusline list mentions `net:<network>` (not done)
+- [x] 4.1 README row for `--host-net` and `CLAUDE_DOCKER_NETWORK` (done 2026-10-15)
+- [x] 4.2 README statusline list mentions `net:<network>` (done 2026-10-15)
 
 ## 5. Validation
 

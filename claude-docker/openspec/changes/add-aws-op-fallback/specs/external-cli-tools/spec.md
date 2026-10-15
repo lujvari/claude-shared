@@ -2,6 +2,8 @@
 
 ### Requirement: Credentials opt-in
 
+> **Superseded in part (2026-09-23, `add-credential-fail-closed`):** every clause below saying `run.sh` continues silently when a token can't be resolved no longer holds. A credential flag that ends up without its credential now aborts the launch unless `CLAUDE_DOCKER_OP_OPTIONAL=1`. Silence about absent mounts is unaffected.
+
 Host credentials (files or env vars) SHALL NOT reach the container unless the user explicitly opts in per-run. `run.sh` defaults to no credential mounts and no token env forwarding. Opt-ins are granted via dedicated flags:
 
 - `--aws`: mount `~/.aws/config` at `/root/.aws/config:ro` and, when present, `~/.aws/sso/` at `/root/.aws/sso:ro`; forward `AWS_PROFILE`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when set on the host. When `AWS_ACCESS_KEY_ID` is unset on the host and `CLAUDE_DOCKER_AWS_OP_REF` is set to an `op://` 1Password item reference (e.g. `op://claude-docker/aegon-aws`), `run.sh` SHALL run `op read` on the host for each canonical sub-field of that item and forward the resolved values as the matching `AWS_*` env vars: `access_key_id` → `AWS_ACCESS_KEY_ID` (required), `secret_access_key` → `AWS_SECRET_ACCESS_KEY` (required), `session_token` → `AWS_SESSION_TOKEN` (optional), `region` → `AWS_REGION` (optional, host `AWS_REGION` wins when both are set). Trailing `/` on the ref SHALL be tolerated. Required fields missing → silent no-op; on `op` missing / sign-out / item-absent, `run.sh` SHALL continue silently. The 1P fallback covers static IAM-user keys (or pre-exported STS bundles); SSO sessions continue to use the host-side `aws sso login` cache mount.

@@ -29,7 +29,7 @@ Not run as part of this retroactive record; the 0a1dd4a commit message records n
 
 - [x] 5.1 Credential opt-in row in README (character repaired in d385738)
 - [x] 5.2 Auth-model row in README
-- [ ] 5.3 `ado-admin` in the README statusline-tag list and `AZURE_DEVOPS_ADMIN_PAT` in the threat-model "Exposed" bullet (not done; neighbours list these; left as found)
+- [x] 5.3 `ado-admin` in the README statusline-tag list and `AZURE_DEVOPS_ADMIN_PAT` in the threat-model "Exposed" bullet (done 2026-10-15)
 
 ## 6. Validation
 

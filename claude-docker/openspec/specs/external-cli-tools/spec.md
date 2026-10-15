@@ -22,6 +22,8 @@ The container image SHALL ship with `gh`, `glab`, and `aws` (v2) on the default 
 
 ### Requirement: Credentials opt-in
 
+> **Superseded in part (2026-09-23, `add-credential-fail-closed`):** every clause below saying `run.sh` continues silently when a token can't be resolved no longer holds. A credential flag that ends up without its credential now aborts the launch unless `CLAUDE_DOCKER_OP_OPTIONAL=1`. Silence about absent mounts is unaffected.
+
 Host credentials (files or env vars) SHALL NOT reach the container unless the user explicitly opts in per-run. `run.sh` defaults to no credential mounts and no token env forwarding. Opt-ins are granted via dedicated flags:
 
 - `--aws`: mount `~/.aws/config` at `/root/.aws/config:ro` and, when present, `~/.aws/sso/` at `/root/.aws/sso:ro`; forward `AWS_PROFILE`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when set on the host.

@@ -31,7 +31,7 @@ Not run as part of this retroactive record; the 58f03d0 commit message records n
 - [x] 5.1 Credential opt-in and auth-model rows in README
 - [x] 5.2 `openrouter` in the statusline-tag list
 - [x] 5.3 "OpenRouter (`--openrouter`)" section with the two-key table
-- [ ] 5.4 Threat-model "Exposed" bullet in README lists `OPENROUTER_API_KEY` (not done; left as found)
+- [x] 5.4 Threat-model "Exposed" bullet in README lists `OPENROUTER_API_KEY` (done 2026-10-15)
 
 ## 6. Validation
 

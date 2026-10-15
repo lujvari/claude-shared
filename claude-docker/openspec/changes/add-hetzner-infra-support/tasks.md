@@ -33,7 +33,7 @@ Not run as part of this retroactive record. 84b1ec7 and a4dcd30 record op/docker
 - [x] 4.2 `hetzner-infra` in the statusline-tag list
 - [x] 4.3 Threat-model "Exposed" mention of `HCLOUD_TOKEN`
 - [x] 4.4 "Hetzner Cloud infrastructure (`--hetzner-infra`)" section with one-time setup
-- [ ] 4.5 Help text and README mention the `ops_` prefix check added in a4dcd30 (not done)
+- [ ] 4.5 Help text and README mention the `ops_` prefix check added in a4dcd30 (README done 2026-10-15; help text waits on the in-flight `run.sh` edit)
 
 ## 5. Validation
 
