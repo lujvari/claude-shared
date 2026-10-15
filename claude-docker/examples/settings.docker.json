@@ -30,7 +30,7 @@
           },
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "command": "if grep -qs 'def cmd_watch' /root/.claude/skills/agent-bus/bus.py; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
             "asyncRewake": true,
             "timeout": 21660
           }
@@ -108,7 +108,7 @@
           },
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "command": "if grep -qs 'def cmd_watch' /root/.claude/skills/agent-bus/bus.py; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
             "asyncRewake": true,
             "timeout": 21660
           }
