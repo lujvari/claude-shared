@@ -27,6 +27,12 @@
             "type": "command",
             "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "asyncRewake": true,
+            "timeout": 21660
           }
         ]
       }
@@ -99,6 +105,12 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/worktree-guard.py ]; then python3 /root/.claude/hooks/worktree-guard.py stop; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "asyncRewake": true,
+            "timeout": 21660
           }
         ]
       }
