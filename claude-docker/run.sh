@@ -349,6 +349,13 @@ ws_suffix=""
 # Counter-based iteration avoids ${!arr[@]} which trips set -u on empty arrays.
 SEEN_NAMES=()
 SEEN_PATHS=()
+# The agent-bus dir, resolved here so the loop can hide it from a broad mount
+# (see below). Taken regardless of --no-bus: the point is what the workspace
+# mount exposes, not whether this box gets a mailbox.
+BUS_HIDE=""
+if [ -n "${CLAUDE_DOCKER_BUS_DIR:-}" ] && [ -d "$CLAUDE_DOCKER_BUS_DIR" ]; then
+  BUS_HIDE=$(cd "$CLAUDE_DOCKER_BUS_DIR" && pwd)
+fi
 for ws in "${WORKSPACES[@]}"; do
   abs=$(cd "$ws" && pwd)
   name=$(basename "$abs")
@@ -388,6 +395,14 @@ for ws in "${WORKSPACES[@]}"; do
         MOUNT_ARGS+=("-v" "$SELF_DIR:/workspaces/$name$sub:ro") ;;
     esac
   fi
+  # Same sweep, for the agent bus: mounting the dev root pulls in every box's
+  # mailbox, so the box could read other boxes' mail and plant "host" mail in
+  # their in/ dirs. Mask it with an empty tmpfs; the box's own mailbox still
+  # arrives at /bus via the bus block below. Applies under --ro as well,
+  # because reading other boxes' mail is the leak.
+  case "$BUS_HIDE" in
+    "$abs"/*) MOUNT_ARGS+=("--tmpfs" "/workspaces/$name${BUS_HIDE#"$abs"}") ;;
+  esac
   CONTAINER_PATHS+=("/workspaces/$name")
 done
 CWD="${CONTAINER_PATHS[0]}"

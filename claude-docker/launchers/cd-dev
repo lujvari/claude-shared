@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# claude-docker launcher: the dev root itself, for cross-project work
+# (PORTFOLIO.md, /triage, the root CLAUDE.md index).
+#
+# No credential flags: this mount reaches every project, including unpacked
+# customer code, so a prompt-injected file anywhere in the tree drives this
+# session. Keep its token set empty; pass a flag per run when the work needs
+# one. Repo work belongs in that repo's own launcher (cd-cis, cd-rr, ...).
+#
+# run.sh hides the agent-bus dir from this mount (other boxes' mail) and pins
+# the launcher dir read-only, so neither is reachable through the broad mount.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "."
+exec "$CD_RUN" --claude-auth "$ws" "$@"
