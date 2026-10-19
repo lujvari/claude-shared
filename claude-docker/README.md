@@ -596,6 +596,12 @@ sudo chown "$(id -u):$(id -g)" path/to/file  # just what was touched
 
 **Prevention:** prefer editing repo files from the host. If you (or Claude) must edit inside the container, run the `sudo chown` above on the host afterward to regain write access. Note you can still `git commit`/`push` the root-owned tree from inside the container — the chown only restores *host-side* editability.
 
+## Secret-read guard (deny-secret-reads)
+
+`hooks/deny-secret-reads.py` is a PreToolUse hook on `Bash` (and `PowerShell` on a Windows host) that denies a command whose pipeline would print a credential: a reader (`cat`, `grep -n`, `sed -n`, `head`, `Get-Content`, ...) on a file that holds one in plaintext (shell rc and history, `.env`, `.netrc`, `.pgpass`, the `op/` and claude-docker env files, git/gh/glab/docker/kube credential files, private keys, backups of these), a recursive grep over `~`, or an environment dump (`env`, `printenv`, `echo $GH_TOKEN`, `gci env:`). A pipeline that is already redaction-shaped (`grep -c`, `| sed -E 's/=.*/=<redacted>/'`, `cut -d= -f1`, `${#VAR}`) passes, and the deny reason names those safe forms. Heredoc bodies are ignored, so commit messages and docs that mention these files are not blocked.
+
+It is a guard against carelessness, not a control: `python -c`, `git show` and similar get past it by design. The Read tool is covered separately by `permissions.deny` `Read(//**/...)` rules in the same settings files, which cost nothing per call. Stdlib-only Python, fails open on any internal error; tests in `hooks/test_deny_secret_reads.py` (`cd hooks && python3 test_deny_secret_reads.py`). [`examples/settings.docker.json`](examples/settings.docker.json) shows the wiring.
+
 ## Specs
 
 Behavioural requirements live in [`openspec/specs/`](openspec/specs/); change history in [`openspec/changes/archive/`](openspec/changes/archive/).

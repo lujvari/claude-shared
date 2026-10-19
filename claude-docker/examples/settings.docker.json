@@ -7,6 +7,42 @@
   "autoUpdates": false,
   "model": "opus[1m]",
   "teammateMode": "tmux",
+  "permissions": {
+    "deny": [
+      "Read(//**/.env)",
+      "Read(//**/.env.local)",
+      "Read(//**/.envrc)",
+      "Read(//**/.bashrc)",
+      "Read(//**/.bash_profile)",
+      "Read(//**/.profile)",
+      "Read(//**/.zshrc)",
+      "Read(//**/.zprofile)",
+      "Read(//**/.bash_history)",
+      "Read(//**/.zsh_history)",
+      "Read(//**/ConsoleHost_history.txt)",
+      "Read(//**/.netrc)",
+      "Read(//**/.pgpass)",
+      "Read(//**/.git-credentials)",
+      "Read(//**/.npmrc)",
+      "Read(//**/.pypirc)",
+      "Read(//**/.claude.json)",
+      "Read(//**/.credentials.json)",
+      "Read(//**/.aws/credentials)",
+      "Read(//**/.config/op/**)",
+      "Read(//**/claude-docker/env)",
+      "Read(//**/.config/gh/hosts.yml)",
+      "Read(//**/.config/glab-cli/config.yml)",
+      "Read(//**/.config/ai-transcribe/api-key)",
+      "Read(//**/.docker/config.json)",
+      "Read(//**/.kube/config)",
+      "Read(//**/.ssh/id_rsa)",
+      "Read(//**/.ssh/id_ed25519)",
+      "Read(//**/.ssh/id_ecdsa)",
+      "Read(//**/*.tfstate)",
+      "Read(//**/*service-account-token*)",
+      "Read(//proc/*/environ)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -40,6 +76,15 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py report; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f /root/.claude/hooks/deny-secret-reads.py ]; then python3 /root/.claude/hooks/deny-secret-reads.py; fi"
           }
         ]
       }
