@@ -27,10 +27,10 @@ debugging spike) without a human in the loop. So the guardrail must
 - **Add `hooks/session-worklog.py`** — a new hook, kept separate from
   `worktree-guard.py` so logging can never destabilise the stomp-guard.
   Four modes:
-  - `start` (SessionStart): record the cwd repo (if any) and its HEAD
-    baseline into a per-session index `/tmp/claude-worklog-<sid>.json`.
-  - `touch` (PostToolUse on Edit/Write): record the edited file's repo +
-    HEAD baseline on first sighting. This is how repos are discovered —
+  - `start` (SessionStart): record the cwd repo (if any) into a
+    per-session index `/tmp/claude-worklog-<sid>.json`.
+  - `touch` (PostToolUse on Edit/Write): record the edited file's repo on
+    first sighting. This is how repos are discovered —
     sessions commonly run from a multi-repo parent (e.g.
     `/workspaces/dev`, not itself a repo) and edit several subrepos, so
     keying on cwd alone would catch none of them.
@@ -48,7 +48,7 @@ debugging spike) without a human in the loop. So the guardrail must
     via a `/tmp` set. Read-only; no live git re-check (an accepted rare
     stale-nag).
 - **Wire it in `examples/settings.docker.json`** — `SessionStart` →
-  `start` + `report`, `PreToolUse` Edit/Write → `report`, `PostToolUse`
+  `start` (which also reports), `PreToolUse` Edit/Write → `report`, `PostToolUse`
   Edit/Write → `touch`, and `SessionEnd` → `stop` (added alongside
   `worktree-guard.py`). Deliberately NOT on `Stop` (per-turn), so there is
   one record per real session, not one per turn. **Every wired command is

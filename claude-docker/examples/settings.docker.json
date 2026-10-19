@@ -14,10 +14,6 @@
           {
             "type": "command",
             "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py start; fi"
-          },
-          {
-            "type": "command",
-            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py report; fi"
           }
         ]
       },

@@ -1,19 +1,21 @@
 ## 1. Hook
 
 - [x] 1.1 Create `claude-docker/hooks/session-worklog.py` — stdlib-only Python 3, argv dispatch (`start`/`touch`/`stop`) mirroring `worktree-guard.py`'s `event()` / `sid()` / `git()` / `repo_paths()` shape.
-- [x] 1.2 Per-session index `/tmp/claude-worklog-<sid>.json` mapping `{repo_top: {common, start_head}}`; `_remember()` adds a repo on first sighting with its current HEAD as the baseline, idempotent thereafter.
+- [x] 1.2 Per-session index `/tmp/claude-worklog-<sid>.json` mapping `{repo_top: {common}}`; `_remember()` adds a repo on first sighting, idempotent thereafter.
 - [x] 1.3 `start`: remember the cwd repo (no-op when cwd is not in a repo). `touch` (PostToolUse): remember the edited file's repo — this is the primary discovery path so sessions run from a non-repo parent still record the subrepos they edit.
-- [x] 1.4 `stop`: for every repo in the index (plus the end-cwd repo when it is a repo), append one NDJSON record to `<repo>/.git/claude-sessions/worklog.ndjson` with sid, branch, end HEAD, uncommitted/untracked counts, ahead/behind; add start HEAD + `commits_this_session` + `diff --stat` summary when a baseline HEAD was captured.
+- [x] 1.4 `stop`: for every repo in the index (plus the end-cwd repo when it is a repo), append one NDJSON record to `<repo>/.git/claude-sessions/worklog.ndjson` with sid, branch, uncommitted/untracked counts, ahead/behind — one `git status --porcelain=v2 --branch` call. (Start/end HEAD, `commits_this_session` and `diff --stat` were dropped in 1.9: nothing read them.)
 - [x] 1.5 On `SessionEnd`, warn to stderr per repo when its tree is dirty or commits are unpushed; stay silent on a clean, pushed tree.
-- [x] 1.6 `diff --stat` only (paths + counts, never content); wrap everything so any error is swallowed to stderr and the hook exits zero; remove the index on `SessionEnd`.
+- [x] 1.6 Counts only (never paths or content); wrap everything so any error is swallowed to stderr and the hook exits zero; remove the index on `SessionEnd`.
 - [x] 1.7 **`report` mode (deferred-warning relay):** resolve the repo from the edited file (`PreToolUse`) or cwd (`SessionStart`); dedup once per repo per session via `/tmp/claude-worklog-reported-<sid>.json`; read the repo's last `worklog.ndjson` record; if dirty/unpushed, emit the warning via `additionalContext` JSON (the only stdout). Read-only, no live git re-check. Smoke-tested: dirty→nags once then deduped; PreToolUse from a non-repo parent nags the edited subrepo; clean→silent; non-repo→silent.
+- [x] 1.8 **Hot-path cost:** `start` folds in `report` (one SessionStart hook); repo lookup is one `git rev-parse` call, cached per directory per session (repeat edits run no git; a Write into a not-yet-existing directory resolves via its nearest existing ancestor); `report` reads only the worklog tail; `stop` removes all three per-session `/tmp` files. Measured on a `/mnt/c` repo: repeat touch ~100→~65 ms, repeat report ~95→~70 ms — the remainder is Python loading the hook from the 9p mount.
+- [x] 1.9 **Record trimmed to what `report` reads:** branch, dirty/untracked counts, ahead/behind from one `git status --porcelain=v2 --branch` (was 6–7 git calls per repo at SessionEnd). Dropped the HEAD baseline (`start`/`touch` no longer run `rev-parse HEAD`), start/end HEAD, `commits_this_session`, `diff --stat` — no reader.
 
 ## 2. Wiring
 
 - [x] 2.1 `examples/settings.docker.json`: add a `SessionStart` block running `session-worklog.py start`, guarded by `[ -f /root/.claude/hooks/session-worklog.py ]`.
 - [x] 2.2 `examples/settings.docker.json`: add a second `PostToolUse` Edit/Write hook entry running `session-worklog.py touch`, alongside `worktree-guard.py touch`.
 - [x] 2.3 `examples/settings.docker.json`: add a second `SessionEnd` hook entry running `session-worklog.py stop`, alongside `worktree-guard.py stop`. Do NOT wire it on `Stop` (avoid a record per turn).
-- [x] 2.6 `examples/settings.docker.json`: wire `report` on `SessionStart` (after `start`) and on `PreToolUse` Edit/Write (after the guard `check`). **All commands `[ -f … ]`-guarded** — a probe with an unguarded missing-file command was found to exit 2 and *block* the tool (caught live), so the guard is load-bearing, not cosmetic.
+- [x] 2.6 `examples/settings.docker.json`: wire `report` on `PreToolUse` Edit/Write (SessionStart reporting is done by `start`, see 1.8) (after the guard `check`). **All commands `[ -f … ]`-guarded** — a probe with an unguarded missing-file command was found to exit 2 and *block* the tool (caught live), so the guard is load-bearing, not cosmetic.
 - [x] 2.4 Confirm the new hook ships into the container via the `run.sh` mount of `hooks/` at `/root/.claude/hooks:ro`.
 - [x] 2.5 **Prerequisite run.sh bugfix:** the hooks-mount block used the unresolved `WRAPPER_DIR` (`dirname "${BASH_SOURCE[0]}"`), which for a `~/bin/claude-docker` *symlink* launch resolves to `~/bin` (no `hooks/`), silently skipping the mount so the container fell back to the host's `~/.claude/hooks`. Switched the block to the already-symlink-resolved `SELF_DIR` and removed the dead `WRAPPER_DIR`. This affected ALL wrapper-shipped hooks (worktree-guard too), not just session-worklog. Verified by simulating a symlink launch.
 
@@ -26,6 +28,6 @@
 
 - [x] 4.1 `python3 -m py_compile hooks/session-worklog.py` passes.
 - [x] 4.2 `python3 -c "import json; json.load(open('examples/settings.docker.json'))"` passes (valid JSON after edit).
-- [x] 4.3 Throwaway-repo smoke: from a NON-repo parent, a `touch` on a file inside a subrepo records that subrepo; after a commit + dirty file + untracked file, `stop` appends a record with `commits_this_session: 1`, `dirty_tracked: 1`, `untracked: 1` and warns to stderr; index cleaned up on SessionEnd; a session touching no repo no-ops.
+- [x] 4.3 Throwaway-repo smoke: from a NON-repo parent, a `touch` on a file inside a subrepo records that subrepo; after a dirty file + untracked file, `stop` appends a record with `dirty_tracked: 1`, `untracked: 1` and warns to stderr; index cleaned up on SessionEnd; a session touching no repo no-ops.
 - [x] 4.4 `openspec validate add-session-worklog --strict` exits 0.
 - [ ] 4.5 In-container check (deferred to next image build + seed sync): a real session run from `/workspaces/dev` that edits a subrepo and leaves it dirty prints the warning and writes `worklog.ndjson` in that subrepo; a clean session is silent.

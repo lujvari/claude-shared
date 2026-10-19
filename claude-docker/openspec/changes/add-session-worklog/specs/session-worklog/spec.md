@@ -2,19 +2,19 @@
 
 ### Requirement: Session work is recorded at session end
 
-The `session-worklog` hook SHALL discover the repositories a session touched by **edit location**: on each `PostToolUse` for an Edit/Write tool, a `touch` invocation SHALL record the repository containing the edited file — together with that repository's `HEAD` at first sighting, as the session baseline — into a per-session index. The repository containing the working directory at `SessionStart` and at `SessionEnd` SHALL also be folded in when each is itself a repository.
+The `session-worklog` hook SHALL discover the repositories a session touched by **edit location**: on each `PostToolUse` for an Edit/Write tool, a `touch` invocation SHALL record the repository containing the edited file into a per-session index. The repository containing the working directory at `SessionStart` and at `SessionEnd` SHALL also be folded in when each is itself a repository.
 
-On `SessionEnd`, for every repository in that set, the hook SHALL append one NDJSON record to `<repo>/.git/claude-sessions/worklog.ndjson`. Each record SHALL carry the session id, the branch, the end `HEAD`, the count of uncommitted tracked changes, the count of untracked files, and the ahead/behind counts versus the tracked upstream (null when no upstream is configured). When a baseline `HEAD` was captured for the repository, the record SHALL also carry the start `HEAD`, the number of commits made during the session, and a one-line `git diff --stat` summary of those commits.
+On `SessionEnd`, for every repository in that set, the hook SHALL append one NDJSON record to `<repo>/.git/claude-sessions/worklog.ndjson`. Each record SHALL carry the session id, the branch, the count of uncommitted tracked changes, the count of untracked files, and the ahead/behind counts versus the tracked upstream (null when no upstream is configured) — exactly the state `report` reads, gathered in a single `git status` call. It SHALL NOT carry a per-session history (start/end HEADs, commit counts, diffstat): nothing reads it, and each field cost a git call on the session's way out.
 
 The log directory is the same shared `<repo>/.git/claude-sessions/` that the session registry uses, so it is visible across every container that mounts the repo and is never committed (it lives inside `.git`). When neither the working directory nor any edited file is inside a git repository, the hook SHALL write no record and SHALL exit without error.
 
 #### Scenario: A session that committed and left changes is recorded
 
 - **GIVEN** a session that edited a file in a repo (so the repo was recorded via `touch`)
-- **AND** the session then made one commit, left one tracked file modified, and created one untracked file
+- **AND** the session left one tracked file modified and created one untracked file
 - **WHEN** `session-worklog stop` runs on `SessionEnd`
 - **THEN** a new line is appended to `<repo>/.git/claude-sessions/worklog.ndjson`
-- **AND** that record reports `commits_this_session: 1`, `dirty_tracked: 1`, and `untracked: 1`, plus the branch, start and end HEADs, and a `diff --stat` summary line
+- **AND** that record reports `dirty_tracked: 1` and `untracked: 1`, plus the branch
 
 #### Scenario: A subrepo edited from a non-repo parent is recorded
 
@@ -56,7 +56,7 @@ The `session-worklog` hook SHALL NOT commit, push, stash, prune, clean, reset, o
 
 ### Requirement: A deferred warning is surfaced on the next session
 
-Because `SessionEnd` output is never displayed, the warning it computes would otherwise go unseen. The hook SHALL provide a `report` mode that re-surfaces it. When run for a repository (the working-directory repo on `SessionStart`, or the edited file's repo on `PreToolUse`), `report` SHALL read that repository's last `worklog.ndjson` record and, when that record was dirty or had unpushed commits, emit a human-readable warning via the hook `additionalContext` output channel (which is visible on `SessionStart` and `PreToolUse`). It SHALL emit at most once per repository per session. It SHALL NOT run any mutating git command and SHALL NOT re-check live git state (so a warning the user resolved without ending a session MAY surface once). When the event is not scoped to a repository (e.g. the working directory is a non-repo parent and no file is being edited), `report` SHALL emit nothing.
+Because `SessionEnd` output is never displayed, the warning it computes would otherwise go unseen. The hook SHALL provide a `report` mode that re-surfaces it. When run for a repository (the working-directory repo on `SessionStart`, or the edited file's repo on `PreToolUse`), `report` SHALL read that repository's last `worklog.ndjson` record and, when that record was dirty or had unpushed commits, emit a human-readable warning via the hook `additionalContext` output channel (which is visible on `SessionStart` and `PreToolUse`). It SHALL emit at most once per repository per session. It SHALL NOT run any mutating git command and SHALL NOT re-check live git state (so a warning the user resolved without ending a session MAY surface once). When the event is not scoped to a repository (e.g. the working directory is a non-repo parent and no file is being edited), `report` SHALL emit nothing. `start` SHALL perform the `report` for the working-directory repository itself, so `SessionStart` needs one hook invocation, not two. Because `report` and `touch` run on every Edit/Write, the repository lookup SHALL be cached per directory for the session, so only the first edit in a directory runs git.
 
 #### Scenario: A subrepo edited from a non-repo parent surfaces its prior warning
 
@@ -74,11 +74,11 @@ Because `SessionEnd` output is never displayed, the warning it computes would ot
 
 ### Requirement: No secret material is logged
 
-The per-session record SHALL describe changes only as file paths and line counts (via `git diff --stat`); it SHALL NOT include file contents or diff hunks. This keeps secret values that may sit in changed files out of the shared, multi-container work log.
+The per-session record SHALL describe changes only as counts; it SHALL NOT include file paths, file contents, or diff hunks. This keeps secret values that may sit in changed files out of the shared, multi-container work log.
 
 #### Scenario: Changed file content is not written to the log
 
 - **GIVEN** a session that modified a file containing a secret value
 - **WHEN** `session-worklog stop` records the session
-- **THEN** the work-log record contains the file's path and its insertion/deletion counts
-- **AND** the work-log record does not contain the file's contents or any diff hunk
+- **THEN** the work-log record counts the file as a tracked change
+- **AND** the work-log record does not contain the file's path, contents, or any diff hunk
