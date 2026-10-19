@@ -53,15 +53,6 @@
             "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py touch; fi"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
-            "timeout": 10
-          }
-        ]
       }
     ],
     "SessionEnd": [
