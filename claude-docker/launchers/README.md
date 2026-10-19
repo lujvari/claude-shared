@@ -35,8 +35,8 @@ cd-ct -- --resume        # everything after -- goes to claude verbatim
 
 Switching work does not require closing the current container: open another
 terminal and run a different launcher. Concurrent containers are supported
-(worktree-guard handles shared checkouts), so you never trade a running session
-to change flags.
+(give two sessions on the same repo separate worktrees — see the main README),
+so you never trade a running session to change flags.
 
 ## Adding one
 

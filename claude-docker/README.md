@@ -502,36 +502,22 @@ Use this when:
 
 **Layout caveat:** relative paths assume the worktree's location relative to the repo's `.git/` is the same in both environments. Nested layouts always satisfy this; moving a worktree to a totally different parent dir breaks both relative and absolute setups.
 
-## Concurrent Claude sessions (worktree-guard)
+## Concurrent Claude sessions on one checkout
 
-Two Claude containers can have the same repo bind-mounted at once. `hooks/worktree-guard.py` stops them from stomping each other. Wire it through `settings.docker.json` — [`examples/settings.docker.json`](examples/settings.docker.json) now ships the full block (PreToolUse `check` + `bash-guard`, PostToolUse `touch`, SessionEnd/Stop `stop`).
+Nothing enforces one session per checkout. Two sessions in the same repo can't silently overwrite each other's file (Claude Code refuses an Edit to a file changed since it was read), but they do share one working tree, index and branch: one session's `git add -A` / `commit -a` sweeps up the other's half-done edits, and a `checkout` / `stash` / `reset` moves files under it. Give a second session its own worktree at `<repo>/.claude/worktrees/<name>` (see [Git worktrees](#git-worktrees)) — **never in container `/tmp`**, which dies with the container and leaves a dead registration that keeps its branch from being checked out until `git worktree prune`.
 
-How it works:
-
-- A shared, heartbeat-based session registry lives in the repo's `.git/claude-sessions/`, visible to every container that mounts the repo.
-- The first session edits the main checkout. When a *second* session tries to Edit/Write the same checkout, the guard blocks it and points it at its own worktree.
-- Those per-session worktrees go under `<repo>/.git/claude-worktrees/claude-<sid8>/` — on the shared `.git`, **not** `/tmp`. This is load-bearing: a worktree in container-local `/tmp` is invisible to the other container, which then treats it as a missing-dir worktree and reaps it with `git worktree prune`, breaking the live session. Under the shared `.git` every container sees a consistent, non-prunable view.
-- On `SessionEnd` the guard removes its own registry entries and reaps only its own clean, already-landed worktrees; a live or unmerged peer is left alone.
-
-Secondary hardening the guard applies automatically:
-
-- Sets `gc.worktreePruneExpire=never` and `worktree.useRelativePaths=true` on the repo (idempotent), so background `git gc` never reaps a peer worktree and worktree link files round-trip across containers/host.
-- A `Bash` PreToolUse matcher refuses a `git worktree prune` / `git worktree remove` that would yank a live peer's worktree. A bare `git worktree prune` ignores `gc.worktreePruneExpire`, so this matcher is the only thing that actually catches it. Removing your own or a genuinely dead worktree stays allowed.
-
-**Do not run a bare `git worktree prune` in a shared-repo container** while another session may be live — the command is registry-blind. The guard now refuses it, but the habit is the hazard.
-
-This is distinct from the user-managed feature worktrees in [Git worktrees](#git-worktrees) above (yours to place at `<repo>/.claude/worktrees/<name>` with relative paths); the guard's `.git/claude-worktrees/` ones are ephemeral and self-cleaning.
+A heartbeat-based guard for this (`hooks/worktree-guard.py`) was removed on 2026-10-19 after it had never fired: it cost ~0.35 s per edit, deregistered sessions at every turn end (so an idle session with uncommitted edits was invisible to it), and did not cover host sessions. Recover it from git history (`git log -- claude-docker/hooks/worktree-guard.py`) if concurrent same-checkout sessions become a real problem.
 
 ## Session work log (session-worklog)
 
 `hooks/session-worklog.py` records what each session did and warns when a session ends with work left behind. It exists to close a specific failure: finished-but-uncommitted work that survives in the bind-mounted tree but goes *unnoticed* across a context reset, because nothing flags it. Wire it through `settings.docker.json` — [`examples/settings.docker.json`](examples/settings.docker.json) ships the block (`SessionStart` → `start`, `PreToolUse` Edit/Write → `report`, `PostToolUse` Edit/Write → `touch`, `SessionEnd` → `stop`). `start` also reports, so a dirty exit left by the previous session surfaces at session start; repo lookups are cached per directory, so only the first edit in a directory pays for git.
 
-It is **strictly observational**. It reads git state and appends a record; it never commits, pushes, stashes, prunes, cleans, resets, or removes anything. (Cleanup/reaping is worktree-guard's job, and only for clean, already-landed worktrees.)
+It is **strictly observational**. It reads git state and appends a record; it never commits, pushes, stashes, prunes, cleans, resets, or removes anything.
 
 How it works:
 
 - Repos are discovered by **edit location**, not by the session's working directory. A `PostToolUse` `touch` records the repo of each edited file into a per-session index `/tmp/claude-worklog-<sid>.json`. This is load-bearing: sessions often run from a multi-repo parent like `/workspaces/dev` (which is *not itself a repo*) and edit several subrepos — keying on cwd alone would catch none of them. `SessionStart` and the end cwd are also folded in when they happen to be repos.
-- `SessionEnd` appends one NDJSON line per touched repo to `<repo>/.git/claude-sessions/worklog.ndjson` (the same shared `.git` dir worktree-guard uses, so it's visible across containers and never committed): session id, branch, uncommitted/untracked counts, and ahead/behind vs upstream — exactly what the next session's `report` reads, from one `git status` call. Counts only: **no paths, no diff content**, so no secret values are logged.
+- `SessionEnd` appends one NDJSON line per touched repo to `<repo>/.git/claude-sessions/worklog.ndjson` (shared `.git`, so it's visible across containers and never committed): session id, branch, uncommitted/untracked counts, and ahead/behind vs upstream — exactly what the next session's `report` reads, from one `git status` call. Counts only: **no paths, no diff content**, so no secret values are logged.
 - On `SessionEnd` it also **warns to stderr**, once per touched repo, when that repo's tree is dirty or has commits not pushed — e.g. `ending in <repo> on 'main' with 3 uncommitted + 1 untracked file(s); 2 commit(s) not pushed`.
 
 Scope and deliberate omissions:

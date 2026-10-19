@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """session-worklog: record how each Claude session left its repos, and warn on a dirty exit.
 
-A companion to worktree-guard.py, kept separate so logging can never
-destabilise the stomp-guard. STRICTLY observational: it reads git state and
-appends a record. It NEVER commits, pushes, stashes, prunes, cleans, resets,
-or removes anything.
+STRICTLY observational: it reads git state and appends a record. It NEVER
+commits, pushes, stashes, prunes, cleans, resets, or removes anything.
 
 It closes the gap that once stranded finished-but-uncommitted work unnoticed
 across a context reset: a session that ends with a dirty tree or unpushed
@@ -22,7 +20,7 @@ start cwd and end cwd are also folded in when they are repos.
 Records land one NDJSON line per touched repo in:
     <repo>/.git/claude-sessions/worklog.ndjson
 shared across containers via the bind-mounted .git, never committed (it sits
-inside .git). The directory is shared with worktree-guard's session registry.
+inside .git).
 
 Dispatch via argv[1]:
   start   SessionStart — record the cwd repo (if any), then `report` on it.
