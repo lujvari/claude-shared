@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The whole script body sits in one { ...; exit; } group, closed at the bottom
+# of the file. bash reads a script incrementally by byte offset, and this one
+# blocks in `docker run` for a whole session — so editing run.sh mid-session
+# (a git pull, a commit) used to make bash resume at a stale offset in the new
+# file on exit and print a bogus syntax error. A group is parsed in full before
+# any of it runs, and the `exit` stops bash reading past it. Real syntax errors
+# still surface, at launch instead of at exit. The body is left unindented.
+{
+
 # Real on-disk directory of this launcher, resolved through any symlinks (the
 # ~/bin/claude-docker launcher is typically a symlink into the repo). Used both
 # to locate wrapper-shipped assets (e.g. hooks/) that get mounted into every
@@ -1618,3 +1627,7 @@ docker run --rm "$DOCKER_TTY_FLAGS" \
   -w "$CWD" \
   "$IMAGE" \
   "${CMD[@]}"
+
+# Closes the group opened under `set -euo pipefail`; see the comment there.
+exit
+}
