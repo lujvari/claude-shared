@@ -14,8 +14,7 @@ symlinked onto `PATH`.
 ```sh
 L=/mnt/c/dev/tools/claude-shared/claude-docker/launchers
 for n in "$L"/cd-*; do ln -sfn "$n" ~/bin/"$(basename "$n")"; done
-ln -sfn "$L/cd-cis" ~/bin/cd-asr      # same tree; tenant = AWS_PROFILE
-ln -sfn "$L/cd-cis" ~/bin/cd-aegon
+ln -sfn "$L/cd-cis" ~/bin/cd-aegon    # same tree; tenant = AWS_PROFILE
 ```
 
 `~/bin` is added to `PATH` by stock `~/.profile`, so **no shell rc defines
@@ -58,6 +57,9 @@ Two rules:
   `~/.config/claude-docker/env`, which `run.sh` loads itself; see the comment
   above `CD_ENV_FILE` in `run.sh` for why that is not a shell rc. A launcher
   names *which* credentials to forward, never their values.
+
+Work that spans several trees calls `cd_workspace` once per tree and passes
+them all; the first becomes the box's working directory (see `cd-asr`).
 
 The dev root is derived in `_lib.sh` from the checkout's own location, four
 levels above this directory — nothing to configure when the clone moves.

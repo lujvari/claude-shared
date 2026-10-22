@@ -2,8 +2,9 @@
 # claude-docker launcher: CIS platform, multi-tenant (ASR + Aegon).
 #
 # Tenant selection is AWS_PROFILE *inside* the container, not a wrapper flag,
-# so one launcher serves both tenants. Also installed as cd-asr and cd-aegon
-# (plain symlinks to this file) — same tree, same flags, different habit.
+# so one launcher serves both tenants. Also installed as cd-aegon (a plain
+# symlink to this file) — same tree, same flags, different habit. cd-asr is
+# not an alias: it is its own launcher, for a.s.r. client (KB) work.
 # Mounts only sbp/cis per the CIS convention.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
