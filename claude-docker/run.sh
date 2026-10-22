@@ -49,6 +49,11 @@ Workspaces:
                       First workspace becomes the container's working dir;
                       every additional workspace is passed to claude as
                       --add-dir so the agent can read/write across all of them.
+  +PATH               Extra workspace given relative to the dev root
+                      (CLAUDE_DOCKER_DEV_ROOT, exported by the cd-* launchers):
+                      cd-cis +clients/asr/asr-switch -- --continue
+                      relaunches a box with one more mount and resumes its
+                      last conversation (same working dir, persistent volume).
 
 Wrapper flags:
   -h, --help          Print this help and exit 0 without starting Docker.
@@ -337,6 +342,12 @@ for arg in "$@"; do
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
     --no-bus)       WITH_BUS=0 ;;
     -*)            echo "claude-docker: unknown flag '$arg' (use -- to pass flags to claude)" >&2; exit 1 ;;
+    +*)             # Workspace relative to the dev root, e.g. +clients/asr/asr-switch.
+                    # The root comes from the cd-* launchers (_lib.sh), so a box
+                    # that outgrew its mounts is relaunched with one extra word.
+                    [ -n "${CLAUDE_DOCKER_DEV_ROOT:-}" ]                       || { echo "claude-docker: '$arg' needs CLAUDE_DOCKER_DEV_ROOT (set by the cd-* launchers)" >&2; exit 1; }
+                    [ -d "$CLAUDE_DOCKER_DEV_ROOT/${arg#+}" ]                       || { echo "claude-docker: '$arg': no such directory under $CLAUDE_DOCKER_DEV_ROOT" >&2; exit 1; }
+                    WORKSPACES+=("$CLAUDE_DOCKER_DEV_ROOT/${arg#+}") ;;
     *)              WORKSPACES+=("$arg") ;;
   esac
 done
