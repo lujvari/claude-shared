@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# claude-docker launcher: Brain (personal) - the global backlog service, laslo/brain.
+# Claude auth only for now. Phase 1 tests will need a test-Postgres flag
+# (see laslo/brain/OPEN.md); Cloudflare credentials only for the deploy phase.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "laslo/brain"
+exec "$CD_RUN" --claude-auth "$ws" "$@"
