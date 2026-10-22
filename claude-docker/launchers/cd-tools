@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
-# claude-docker launcher: self-edit the launcher tooling.
+# claude-docker launcher: self-edit the launcher tooling, and the kits it ships.
 # --tools mounts the launcher dir read-WRITE (it is read-only elsewhere), so
 # this is the session that can change run.sh and these launchers.
+#
+# laslo/kits is mounted beside it because claude-docker work keeps reaching
+# into kits (agent-bus, hooks, the dev-workflow skills); without it that work
+# ran in unboxed host sessions. --gh so both repos (github.com/lujvari) push
+# from the box — the same credential cd-mep and cd-rr already forward.
+#
+# Still host-only, by design: installing what is built here. Copying a skill
+# into ~/.claude/skills, linking a launcher into ~/bin and editing
+# ~/.claude/CLAUDE.md or settings.json — boxes see those read-only, so a box
+# can't rewrite the rules that govern the next one.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
-cd_workspace "tools/claude-shared"
-exec "$CD_RUN" --claude-auth --tools "$ws" "$@"
+cd_workspace "tools/claude-shared"; shared=$ws
+cd_workspace "laslo/kits";          kits=$ws
+exec "$CD_RUN" --claude-auth --tools --gh "$shared" "$kits" "$@"
