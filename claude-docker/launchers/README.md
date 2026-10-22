@@ -14,7 +14,6 @@ symlinked onto `PATH`.
 ```sh
 L=/mnt/c/dev/tools/claude-shared/claude-docker/launchers
 for n in "$L"/cd-*; do ln -sfn "$n" ~/bin/"$(basename "$n")"; done
-ln -sfn "$L/cd-cis" ~/bin/cd-aegon    # same tree; tenant = AWS_PROFILE
 ```
 
 `~/bin` is added to `PATH` by stock `~/.profile`, so **no shell rc defines
