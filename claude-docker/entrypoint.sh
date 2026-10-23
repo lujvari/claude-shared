@@ -139,15 +139,26 @@ inject_credential "${GITLAB_TOKEN:-}" "${CLAUDE_DOCKER_GITLAB_HOSTS:-gitlab.com}
 # scope unless the user sets the override explicitly.
 inject_credential "${AZURE_DEVOPS_EXT_PAT:-}" "${CLAUDE_DOCKER_ADO_HOSTS:-dev.azure.com}" '$AZURE_DEVOPS_EXT_PAT'
 
-# Per-container writable settings. run.sh bind-mounts settings.docker.json
-# read-only as a *seed* at /root/.claude/settings.docker.json; copy it onto
-# the real settings.json on every start. This makes settings.json a plain
-# writable file in the claude-code-home volume (a read-only single-file bind
-# mount can't be rename()'d over, which is how `/effort` and other in-session
-# settings writes persist — that's the EBUSY they hit). Copying on every
-# start means the on-start default tracks the seed and a live `/effort`
-# change applies to that session only, so it never leaks across the other
-# containers sharing this volume.
+# Writable settings. run.sh bind-mounts settings.docker.json read-only as a
+# *seed* at /root/.claude/settings.docker.json; copy it onto the real
+# settings.json on every start. This makes settings.json a plain writable
+# file (a read-only single-file bind mount can't be rename()'d over, which is
+# how `/effort` and other in-session settings writes persist — that's the
+# EBUSY they hit).
+#
+# The file is SHARED, not per-container: settings.json sits on the
+# claude-code-home volume, which every non-ephemeral container mounts at
+# /root/.claude. So each container start resets it to the seed for all
+# running containers, and a live `/effort` change is seen by any container's
+# next `claude` start. Only --ephemeral containers get their own copy.
+# Accepted as is. Ways to make it per-container that do NOT work:
+#   - a per-container file bind-mounted over settings.json: EBUSY again;
+#   - settings.json as a symlink to a per-container path: Claude Code
+#     (checked in 2.1.304) refuses to write settings through a symlink, so
+#     `/effort` would fail outright.
+# The remaining route is a per-container CLAUDE_CONFIG_DIR with the shared
+# state linked back in. It was judged too fragile, because Claude Code also
+# refuses to write into symlinked directories.
 if [ -f /root/.claude/settings.docker.json ]; then
   cp -f /root/.claude/settings.docker.json /root/.claude/settings.json
 fi

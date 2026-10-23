@@ -1492,10 +1492,11 @@ fi
 # settings.json): the entrypoint copies it onto a real, writable
 # settings.json on every start. A read-only single-file bind mount can't be
 # written or rename()'d over, so in-session settings writes — `/effort`
-# above all — failed with EBUSY. The seed copy lives in the per-container
-# writable layer of the claude-code-home volume, so each container's
-# settings.json is independent and `/effort` changes stay local to that
-# session; the on-start default always tracks this seed.
+# above all — failed with EBUSY. The on-start default always tracks this
+# seed, but the copy lands on the shared claude-code-home volume. So a
+# container start resets settings.json for every running container, and
+# `/effort` changes are shared too. That is accepted; entrypoint.sh records
+# why the per-container alternatives fail.
 [ -f "$CLAUDE_CONFIG_DIR/settings.docker.json" ] \
   && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/root/.claude/settings.docker.json:ro")
 
