@@ -8,8 +8,8 @@ set -euo pipefail
 cd_workspace "laslo/brain"
 
 # brain-test-postgres: Brain's own disposable test database, defined in
-# laslo/brain/compose.test.yml (loopback 47304; boxes reach it at
-# host.docker.internal:47304). Brought up before every launch so --braindb's
+# laslo/brain/compose.test.yml (loopback 47401; boxes reach it at
+# host.docker.internal:47401). Brought up before every launch so --braindb's
 # DSN always has something to answer it; `up --wait` is a no-op when it is
 # already healthy. Always through `op run`: .env.test holds op:// refs for the
 # init passwords, and leaving them unresolved would change the service config

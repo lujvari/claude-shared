@@ -11,10 +11,10 @@
 
 ## 3. brain-test-postgres (owner decision 2026-10-23: dedicated container, not MEP's instance)
 
-- [ ] 3.1 `compose.test.yml` + `.env.test` (op:// refs only) in laslo/brain: postgres:16-alpine, container `brain-test-postgres`, own named volume, `127.0.0.1:47304`, init script creating role `laslo_brain_test` (LOGIN, non-superuser) and the database it owns
+- [x] 3.1 `compose.test.yml` + `.env.test` (op:// refs only) in laslo/brain: postgres:16-alpine, container `brain-test-postgres`, own named volume, `127.0.0.1:47401`, `tests/db-init` SQL creating role `laslo_brain_test` (LOGIN, non-superuser) and the database it owns
 - [x] 3.2 `cd-brain` runs `op run --env-file=.env.test -- docker compose -f compose.test.yml up -d --wait` before launching
 - [ ] 3.3 Owner: 1Password item `laslo-brain-test-postgres` (claude-docker vault) gets fields `superuser-password` and `dsn` beside the role `password`
-- [ ] 3.4 Verify from a box: `host.docker.internal:47304` answers
+- [ ] 3.4 Verify from a box: `host.docker.internal:47401` answers
 
 ## 4. Smoke tests
 
