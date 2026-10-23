@@ -27,7 +27,7 @@
 - [x] 5.2 Migration commands run clean
 - [x] 5.3 A box writes a file under `/mnt/c` that WSL shows as `aslojvari`
 - [x] 5.4a tmpfs `uid=` option accepted (masks mount as uid 1000, mode 0700)
-- [ ] 5.4b Every `cd-*` launcher starts
+- [x] 5.4b Every `cd-*` launcher starts
 - [x] 5.5 In a box: `flutter --version`, `git config --show-origin --get-all credential.https://github.com/.helper` under `--gh`, `/effort` persists
 
 ## 6. On archive
