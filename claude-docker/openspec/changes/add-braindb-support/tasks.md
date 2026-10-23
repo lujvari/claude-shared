@@ -13,15 +13,15 @@
 
 - [x] 3.1 `compose.test.yml` + `.env.test` (op:// refs only) in laslo/brain: postgres:16-alpine, container `brain-test-postgres`, own named volume, `127.0.0.1:47401`, `tests/db-init` SQL creating role `laslo_brain_test` (LOGIN, non-superuser) and the database it owns
 - [x] 3.2 `cd-brain` runs `op run --env-file=.env.test -- docker compose -f compose.test.yml up -d --wait` before launching
-- [ ] 3.3 Owner: 1Password item `laslo-brain-test-postgres` (claude-docker vault) gets fields `superuser-password` and `dsn` beside the role `password`
-- [ ] 3.4 Verify from a box: `host.docker.internal:47401` answers
+- [x] 3.3 Owner: 1Password item `laslo-brain-test-postgres` (claude-docker vault) gets fields `superuser-password` and `dsn` beside the role `password`
+- [x] 3.4 Verify from a box: `host.docker.internal:47401` answers
 
 ## 4. Smoke tests
 
 `--mepdb` has no automated tests; these mirror its manual checks.
 
 - [x] 4.1 `bash -n run.sh`; `--help` shows `--braindb` and the default ref
-- [ ] 4.2 Live: `cd-brain` → `psql "$BRAIN_TEST_DSN" -c 'select 1'` succeeds in the box
+- [x] 4.2 Live: `cd-brain` → `psql "$BRAIN_TEST_DSN" -c 'select 1'` succeeds in the box
 - [x] 4.3 Fail closed: `--braindb` with the ref set to `""` and no host var exits non-zero before `docker run`
 
 ## 5. Documentation
