@@ -265,6 +265,14 @@ Environment:
                            --claude-dir=PATH).
   CLAUDE_DOCKER_BUS_DIR    Host agent-bus dir (see --no-bus). Unset or
                            missing: no mailbox is mounted.
+  CLAUDE_DOCKER_NO_TOKEN_PROBE
+                           1 → skip the launch-time token check. By default
+                           each credential flag gets one identity request
+                           (2 s cap, in parallel); a rejected token prints a
+                           warning and the launch goes on. Offline: silent.
+  CLAUDE_DOCKER_ADO_ORG    Azure DevOps org for that check on --ado /
+                           --ado-admin (set by cd-ct, cd-ws13). Unset: no
+                           ADO check.
 
 Credentials are off by default; combine opt-ins as needed:
   claude-docker --aws --gh ~/repo
@@ -1456,20 +1464,23 @@ if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
 fi
 
 # Statusline: mount the host script as-is, plus a thin wrapper at the canonical
-# path that prefixes a `docker:<flags>` tag when CLAUDE_DOCKER_FLAGS is set.
-# The wrapper is a no-op passthrough when unset so non-claude-docker runs of
-# the same file would behave identically.
+# path that prefixes a `docker:<flags>` tag when CLAUDE_DOCKER_FLAGS is set,
+# and a red `token-dead:<flags>` tag when the launch-time token probe saw a
+# rejected token (CLAUDE_DOCKER_REJECTED_TOKENS, set further down). The
+# wrapper is a no-op passthrough when neither is set so non-claude-docker runs
+# of the same file would behave identically.
 if [ -f "$CLAUDE_CONFIG_DIR/statusline-command.sh" ]; then
   cat >"$stage/statusline-command.sh" <<'WRAP'
 #!/bin/sh
 # claude-docker wrapper — prepends active opt-in flag tag to host statusline.
 input=$(cat)
 body=$(printf '%s' "$input" | sh /root/.claude/statusline-command.original.sh)
-if [ -n "${CLAUDE_DOCKER_FLAGS:-}" ]; then
-  printf '\033[33mdocker:%s\033[0m %s' "$CLAUDE_DOCKER_FLAGS" "$body"
-else
-  printf '%s' "$body"
-fi
+tag=""
+[ -n "${CLAUDE_DOCKER_FLAGS:-}" ] \
+  && tag=$(printf '\033[33mdocker:%s\033[0m ' "$CLAUDE_DOCKER_FLAGS")
+[ -n "${CLAUDE_DOCKER_REJECTED_TOKENS:-}" ] \
+  && tag="$tag$(printf '\033[31mtoken-dead:%s\033[0m ' "$CLAUDE_DOCKER_REJECTED_TOKENS")"
+printf '%s%s' "$tag" "$body"
 WRAP
   chmod +x "$stage/statusline-command.sh"
   MOUNT_ARGS+=(
@@ -1638,6 +1649,14 @@ if [ "$launch_blocked" = "1" ]; then
   fi
 fi
 # --- end credential post-conditions ---
+
+# Present is not the same as accepted: one identity request per credential
+# flag, warning on a rejected token and never blocking. See lib/token-probe.sh.
+# shellcheck source=lib/token-probe.sh
+. "$SELF_DIR/lib/token-probe.sh"
+token_probe_all
+[ -n "$TOKEN_PROBE_REJECTED" ] \
+  && ENV_ARGS+=("-e" "CLAUDE_DOCKER_REJECTED_TOKENS=$TOKEN_PROBE_REJECTED")
 
 # -t only when attached to a terminal. A headless launch (`-- -p "..."` from a
 # script or an orchestrating agent) has no TTY, and docker refuses -t without

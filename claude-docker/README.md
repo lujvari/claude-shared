@@ -352,6 +352,12 @@ This is deliberately harsher than a warning. Warnings go to stderr and Claude Co
 
 A single failed read is usually a transient `op read` timeout: re-run, or raise `CLAUDE_DOCKER_OP_TIMEOUT`. To launch without the credentials anyway, set `CLAUDE_DOCKER_OP_OPTIONAL=1` — the same escape hatch the 1Password preflight offers.
 
+#### A rejected token warns at launch
+
+A token that is present but expired or revoked passes the check above. So after it, `run.sh` makes one identity request per credential flag (`api.github.com/user`, GitLab `api/v4/user`, ADO `connectionData`, Jira `myself`, and so on; the full table is in `openspec/changes/add-token-probe/design.md`). A rejected token prints `claude-docker: --<flag> token rejected (HTTP 401) - rotate it on the host before relying on this box` and the launch continues. Claude Code repaints the terminal a moment later, so the rejected flags also go into the container as `CLAUDE_DOCKER_REJECTED_TOKENS`, and the statusline shows a red `token-dead:<flags>` tag after the `docker:` one for the whole session. A network error, timeout, 5xx or a 403 prints nothing; 403 only counts for Cloudflare, which uses it for bad tokens. The requests run in parallel and give up after 2 s, and each token reaches `curl` on stdin, never in argv. `CLAUDE_DOCKER_NO_TOKEN_PROBE=1` turns the check off.
+
+Not checked: `--aws`, `--tofu`, `--mepdb`, `--rr-e2e`, `--tfe` when its token is only in the mounted credentials file, and `--ado`/`--ado-admin` without `CLAUDE_DOCKER_ADO_ORG`. ADO has no org-less endpoint that accepts an org-scoped PAT.
+
 #### GitLab fine-grained PAT recipe (self-managed instances)
 
 Newer self-managed GitLab (e.g. `sbp.gitlab.schubergphilis.com`) offers **fine-grained** PATs that scope by resource + permission instead of the classic `api`/`write_repository` scopes. Both `git` (clone/pull/push) and `glab` read the token from `GITLAB_TOKEN`, so one fine-grained token covers both. Mint it on the *correct instance* (check the URL bar is the self-managed host, not `gitlab.com`), then store the value at `op://claude-docker/gitlab-pat/credential`.
