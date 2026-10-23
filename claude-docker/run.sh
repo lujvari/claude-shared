@@ -177,6 +177,15 @@ Wrapper flags:
                       to switch the 1Password path off. The value is a full
                       DSN, password included — keep it on a throwaway test
                       instance, never a database holding real data.
+  --braindb           Opt in to the Brain (laslo/brain) test Postgres: forward
+                      BRAIN_TEST_DSN so Brain's in-container test suite can
+                      reach its brain_test database. Same shape as --mepdb,
+                      including the defaulted ref, via
+                      CLAUDE_DOCKER_BRAINDB_OP_REF:
+                        op://claude-docker/laslo-brain-test-postgres/dsn
+                      Set it to "" to switch the 1Password path off. Not the
+                      myEntryPoint "brain" database --mepdb names: a separate
+                      database and role on the same host test instance.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
                       non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so
@@ -320,6 +329,7 @@ WITH_CLOUDFLARE=0
 WITH_OPENROUTER=0
 WITH_SONAR=0
 WITH_MEPDB=0
+WITH_BRAINDB=0
 WITH_RR_E2E=0
 WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
@@ -351,6 +361,7 @@ for arg in "$@"; do
     --openrouter)   WITH_OPENROUTER=1 ;;
     --sonar)        WITH_SONAR=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
+    --braindb)      WITH_BRAINDB=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
     --hetzner-infra) WITH_HETZNER_INFRA=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
@@ -624,6 +635,9 @@ fi
 # hands the value straight to its driver, so any host-side decomposition would
 # be a second representation to keep in sync.
 [ "$WITH_MEPDB" = "1" ] && ENV_VARS+=(POSTGRES_TEST_URL)
+# Same reasoning, Brain's suite: its own variable name rather than a second
+# POSTGRES_TEST_URL, so --mepdb and --braindb on one launch cannot collide.
+[ "$WITH_BRAINDB" = "1" ] && ENV_VARS+=(BRAIN_TEST_DSN)
 # Six variables, two of them secret: the account passwords. The emails are not
 # secret but come from 1Password anyway (see the read block below) — the login
 # items already hold them, so one source per account beats two. The connection
@@ -805,6 +819,11 @@ op_read() {
 # for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
+# --braindb's op-ref: defaulted for the same reason as --mepdb's, one database
+# (laslo/brain's brain_test). The item name carries the laslo- prefix because
+# the unprefixed brain-test-postgres already belongs to myEntryPoint.
+BRAINDB_OP_REF="${CLAUDE_DOCKER_BRAINDB_OP_REF-op://claude-docker/laslo-brain-test-postgres/dsn}"
+
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
 # read from each (username + password) and per-field vars would be four
 # settings to keep consistent for what is really two accounts. Hence the
@@ -904,6 +923,10 @@ op_bin_needed_for=""
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
     op_needed=1; op_needed_for="$op_needed_for --mepdb"
+  fi
+  if [ "$WITH_BRAINDB" = "1" ] && [ -z "${BRAIN_TEST_DSN:-}" ] \
+     && [ -n "$BRAINDB_OP_REF" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --braindb"
   fi
   # Each account is paired with its own ref so the preflight still runs when
   # only one of the two needs a read (E2E_PASSWORD pre-set on the host, E2E2's
@@ -1274,6 +1297,20 @@ if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
   fi
 fi
 
+# --braindb fallback: the --mepdb block above for Brain's DSN. Same blast-radius
+# caveat — keep the item on the disposable brain_test database only.
+if [ "$WITH_BRAINDB" = "1" ] && [ -z "${BRAIN_TEST_DSN:-}" ] \
+   && [ -n "$BRAINDB_OP_REF" ]; then
+  if command -v op >/dev/null 2>&1; then
+    braindb_dsn=$(op_read "$BRAINDB_OP_REF" || true)
+    if [ -n "$braindb_dsn" ]; then
+      BRAIN_TEST_DSN="$braindb_dsn"
+      export BRAIN_TEST_DSN
+      ENV_ARGS+=("-e" "BRAIN_TEST_DSN")
+    fi
+  fi
+fi
+
 # Fill one --rr-e2e account field from 1Password when the host has not already
 # set it. $1 = env var to fill, $2 = op:// item ref, $3 = field name. Four
 # explicit calls rather than a table, because an op:// ref contains ':' and any
@@ -1416,6 +1453,7 @@ DOCKER_FLAGS=()
 [ "$WITH_OPENROUTER" = "1" ] && DOCKER_FLAGS+=("openrouter")
 [ "$WITH_SONAR" = "1" ]    && DOCKER_FLAGS+=("sonar")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
+[ "$WITH_BRAINDB" = "1" ]  && DOCKER_FLAGS+=("braindb")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_HETZNER_INFRA" = "1" ] && DOCKER_FLAGS+=("hetzner-infra")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
@@ -1631,6 +1669,7 @@ cred_require() {
 [ "$WITH_OPENROUTER" = "1" ] && cred_require --openrouter OPENROUTER_API_KEY
 [ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
 [ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
+[ "$WITH_BRAINDB" = "1" ]    && cred_require --braindb BRAIN_TEST_DSN
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
 [ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
 
