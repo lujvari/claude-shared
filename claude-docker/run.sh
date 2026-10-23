@@ -168,9 +168,10 @@ Wrapper flags:
                       POSTGRES_TEST_URL so the in-container test suite can
                       reach the brain test database. Host env var when set,
                       else 1Password via CLAUDE_DOCKER_MEPDB_OP_REF (`op read`
-                      on host). That ref is the only one with a built-in
-                      default, because the flag names one specific database
-                      rather than a class of service:
+                      on host). The ref has a built-in default, like
+                      --rr-e2e's and --hetzner-infra's, because the flag
+                      names one specific database rather than a class of
+                      service:
                         op://claude-docker/brain-test-postgres/dsn
                       Point the var elsewhere to override it, or set it to ""
                       to switch the 1Password path off. The value is a full
@@ -203,9 +204,13 @@ Wrapper flags:
                       in CLAUDE_DOCKER_HETZNER_OP_TOKEN_FILE (default
                       ~/.config/op/infra-service-account-token), never the
                       everyday one. Other flags still read from the everyday
-                      vault in the same launch. A Read & Write token can delete
-                      the server and its backups — use it for provisioning,
-                      firewall changes and restore drills, not daily work.
+                      vault in the same launch. A token file that is missing,
+                      empty or not starting with `ops_` (a 1Password
+                      service-account token; usually the Hetzner token pasted
+                      into the wrong file) aborts the launch. A Read & Write
+                      token can delete the server and its backups — use it
+                      for provisioning, firewall changes and restore drills,
+                      not daily work.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
                       over /root/.claude/.credentials.json so host and
@@ -247,8 +252,13 @@ Wrapper flags:
                       read other boxes' mail or plant mail "from the host".
                       <key> is the first workspace's path relative to the
                       bus dir's parent, '/' -> '.' (laslo/ringrecipe ->
-                      laslo.ringrecipe). Also points SLACK_OUTBOX_QUEUE at
-                      /bus/.slack-outbox/queue, which the host broker watches.
+                      laslo.ringrecipe). Sets AGENT_BUS_DIR=/bus and
+                      AGENT_BUS_SELF=<key> in the box, and points
+                      SLACK_OUTBOX_QUEUE at /bus/.slack-outbox/queue, which
+                      the host broker watches. Warns and launches without a
+                      mailbox when CLAUDE_DOCKER_BUS_DIR names a dir that does
+                      not exist, or when <key> is not a safe name (anything
+                      outside A-Za-z0-9._-, or a leading '.').
 
 Separator:
   --                  Ends wrapper-flag parsing. Everything after is passed
@@ -685,8 +695,10 @@ fi
 # `gh auth token --hostname <host>` until one returns a token. Users
 # authenticated only against a GH Enterprise host (not github.com) would
 # otherwise get an empty token from plain `gh auth token` (which defaults
-# to github.com) and silently lose the auto-injection. Silent on failure
-# (gh absent or not logged into any enumerated host). Skipped when
+# to github.com) and silently lose the auto-injection. This step is quiet
+# when gh is absent or not logged into any enumerated host; if --gh then
+# ends up with no token, the credential post-condition gate aborts the launch.
+# Skipped when
 # CLAUDE_DOCKER_GITHUB_OP_REF is set so 1Password stays the single source of
 # truth (the op-ref block below supplies the token instead of a stray login).
 if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] \
@@ -784,8 +796,8 @@ op_read() {
 }
 
 # --mepdb's op-ref, resolved once so the preflight below and the read block
-# further down agree on one value. Unlike every other opt-in this ref has a
-# default: the flag names one specific database (the myEntryPoint brain test
+# further down agree on one value. Like --rr-e2e's and --hetzner-infra's, this
+# ref has a default: the flag names one specific database (the myEntryPoint brain test
 # Postgres) rather than a class of service, so there is no per-user choice to
 # configure and requiring the env var would only be ceremony. `${VAR-default}`
 # without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
@@ -1024,7 +1036,8 @@ fi
 # 1Password the authoritative source — the CLI fallback is skipped when the
 # ref is set, so a stray host `gh auth login` can't shadow it. e.g.
 # CLAUDE_DOCKER_GITHUB_OP_REF="op://claude-docker/github-pat/credential".
-# Silent on failure: op missing, not signed in, item absent, or VPN timeout.
+# Fails closed: a failed op_read is logged to OP_FAIL_LOG, and the credential
+# post-condition gate aborts the launch (CLAUDE_DOCKER_OP_OPTIONAL=1 overrides).
 if [ "$WITH_GH" = "1" ] && [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] \
    && [ -n "${CLAUDE_DOCKER_GITHUB_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
@@ -1042,7 +1055,7 @@ fi
 # the --gh op-ref above: 1Password is authoritative and the glab-config
 # fallback is skipped when the ref is set. e.g.
 # CLAUDE_DOCKER_GITLAB_OP_REF="op://claude-docker/gitlab-pat/credential".
-# Silent on failure: op missing, not signed in, item absent, or VPN timeout.
+# Fails closed, like the --gh op-ref above.
 if [ "$WITH_GLAB" = "1" ] && [ -z "${GITLAB_TOKEN:-}" ] \
    && [ -n "${CLAUDE_DOCKER_GITLAB_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
@@ -1061,8 +1074,7 @@ fi
 # on-disk config to parse (ADO PATs typically live in a password manager,
 # not in a tool config), so the source is opt-in via env var pointing at
 # an op:// reference (e.g. CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential").
-# Silent on failure: op missing, not signed in, or item absent — the
-# entrypoint simply won't inject a credential helper for this session.
+# Fails closed, like the --gh op-ref above.
 if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
    && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then
@@ -1127,9 +1139,7 @@ fi
 # file lives in the persistent claude-code-root volume, so it survives every
 # relaunch: the sandbox keeps getting 401 from a token that no longer exists
 # while 1Password holds a working one, and restarting never helps because the
-# literal *is* the source. Silent on failure: op missing, not signed in, or
-# item absent — the Management API then answers 401, which is more debuggable
-# than a half-injected token.
+# literal *is* the source. Fails closed, like the --gh op-ref above.
 if [ "$WITH_SUPABASE" = "1" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] \
    && [ -n "${CLAUDE_DOCKER_SUPABASE_OP_REF:-}" ]; then
   if command -v op >/dev/null 2>&1; then

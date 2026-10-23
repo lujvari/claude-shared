@@ -30,7 +30,7 @@ Not run as part of this retroactive record; the 2a666b0 commit message records n
 ## 5. Documentation
 
 - [x] 5.1 `--no-bus` row in the README hardening-flags table
-- [ ] 5.2 Help and README mention `AGENT_BUS_DIR` / `AGENT_BUS_SELF` and the warn-and-skip cases (README done 2026-10-15; help text waits on the in-flight `run.sh` edit)
+- [x] 5.2 Help and README mention `AGENT_BUS_DIR` / `AGENT_BUS_SELF` and the warn-and-skip cases
 
 ## 6. Validation
 

@@ -17,7 +17,7 @@ Not run as part of this retroactive record.
 ## 3. Documentation
 
 - [x] 3.1 Mark the superseded "silent" clauses in the base spec and the older change specs
-- [ ] 3.2 Some `run.sh` comments still say "Silent on failure" (e.g. the `--gh` op-ref fallback); fix once the in-flight `run.sh` edit lands
+- [x] 3.2 Some `run.sh` comments still say "Silent on failure" (e.g. the `--gh` op-ref fallback)
 
 ## 4. Validation
 
