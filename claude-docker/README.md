@@ -371,6 +371,10 @@ A working scope set (git pull/push + `glab mr`/tag/work-item flows across all yo
 
 Leave the **User** and **Global** permission blocks empty. Absolute minimum for a read-only `git pull` is just `Code` (Read); the rest enable the everyday push/MR/tag/issue workflow so you don't have to re-mint. Note the expiry date GitLab forces (usually ≤1 year) — re-mint into the same 1P item to rotate.
 
+### Python venvs (uv)
+
+`run.sh` sets `UV_PROJECT_ENVIRONMENT=/root/.venvs/<box key>` (the agent-bus key, e.g. `clients.asr.asr-kb`), so `uv sync` / `uv run` build the venv on the `claude-code-root` volume instead of in the repo's `.venv`. The workspace bind of `C:\` is 9p/drvfs, where syncing a package with many files (mkdocs-material, ~13.6k) takes longer than any tool timeout; on `/root` the same sync takes seconds. The key is per box, not per project: a box that mounts several uv projects (`cd-dev`, `cd-asr-ref`) shares one venv, and uv re-syncs it whenever you switch projects. Scripts that call `.venv/bin/...` directly won't find it — use `uv run`. To use the in-tree venv anyway: `UV_PROJECT_ENVIRONMENT=.venv uv sync`.
+
 ### .NET and private NuGet feeds
 
 `dotnet` is on PATH with SDKs 8 and 9 under `DOTNET_ROOT=/opt/dotnet`, and `dotnet tool install -g` shims land in `~/.dotnet/tools`. The package cache stays at its default `~/.nuget/packages`, which lives in the `claude-code-root` named volume, so a restore is paid once per volume rather than once per container.

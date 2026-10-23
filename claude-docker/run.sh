@@ -427,6 +427,31 @@ for ws in "${WORKSPACES[@]}"; do
 done
 CWD="${CONTAINER_PATHS[0]}"
 
+# box_key PARENT: the box's name, from its first workspace — the path below
+# PARENT with / turned into . (clients/asr/asr-kb -> clients.asr.asr-kb), or
+# the bare basename when the workspace isn't under PARENT. Unique per tree,
+# which is what both the agent-bus mailbox and the uv venv need.
+box_key() {
+  case "${SEEN_PATHS[0]}" in
+    "$1"/*) k="${SEEN_PATHS[0]#"$1"/}"; printf '%s' "${k//\//.}" ;;
+    *)      basename "${SEEN_PATHS[0]}" ;;
+  esac
+}
+
+# uv venvs off the workspace mount. uv's default in-tree .venv lands on the
+# 9p/drvfs bind of C:\, where syncing a many-file package (mkdocs-material,
+# ~13.6k files) outlasts any tool timeout; /root is ext4 and persists. /root is
+# one claude-code-root volume shared by every box, hence the per-box key. Not
+# per project: a box mounting several uv projects (cd-dev, cd-asr-ref) shares
+# one venv that uv re-syncs on each switch. Cache and venv share a filesystem,
+# so uv's default hardlink mode works and UV_LINK_MODE is left alone. A repo
+# that needs its in-tree .venv: UV_PROJECT_ENVIRONMENT=.venv uv sync.
+venv_key=$(box_key "${CLAUDE_DOCKER_DEV_ROOT:-/nonexistent}")
+case "$venv_key" in
+  *[!A-Za-z0-9._-]*|""|.*) ;;
+  *) ENV_ARGS+=("-e" "UV_PROJECT_ENVIRONMENT=/root/.venvs/$venv_key") ;;
+esac
+
 # Agent bus: give the box its own mailbox, and only its own. Hub shape — the
 # host sees every <bus>/<key>, a box sees one — so a box's sender identity is
 # the directory the host chose, not anything the box claims, and one box can
@@ -439,12 +464,7 @@ BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-}"
 if [ "$WITH_BUS" = "1" ] && [ -n "$BUS_DIR" ]; then
   if [ -d "$BUS_DIR" ]; then
     BUS_DIR=$(cd "$BUS_DIR" && pwd)
-    bus_parent=$(dirname "$BUS_DIR")
-    bus_ws="${SEEN_PATHS[0]}"
-    case "$bus_ws" in
-      "$bus_parent"/*) bus_rel="${bus_ws#"$bus_parent"/}"; bus_key="${bus_rel//\//.}" ;;
-      *)               bus_key=$(basename "$bus_ws") ;;
-    esac
+    bus_key=$(box_key "$(dirname "$BUS_DIR")")
     case "$bus_key" in
       *[!A-Za-z0-9._-]*|""|.*)
         echo "claude-docker: agent-bus key '$bus_key' is not a safe name; launching without a mailbox" >&2 ;;
