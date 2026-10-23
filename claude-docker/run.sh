@@ -771,6 +771,12 @@ else OP_TIMEOUT_BIN=""; fi
 OP_FAIL_LOG="${TMPDIR:-/tmp}/claude-docker-op-failed.$$"
 rm -f "$OP_FAIL_LOG"
 
+# $2 = "optional" for a field an item may simply not have (--aws's
+# session_token / region). A non-timeout failure there is reported in one
+# line and NOT logged to OP_FAIL_LOG, since "field absent" is the normal
+# case and op's exit code doesn't separate it from other errors. A timeout
+# still logs: an unreachable 1Password says nothing about the field, and the
+# required reads beside it fail the same way.
 op_read() {
   # Preflight below found the token unusable — skip the read entirely rather
   # than emit an identical failure for every ref.
@@ -794,6 +800,11 @@ op_read() {
   if [ "$op_rc" -ne 0 ]; then
     op_err=$(tail -3 "$op_errf" 2>/dev/null | tr -d '\r')
     rm -f "$op_errf"
+    if [ "${2:-}" = "optional" ] && [ "$op_rc" -ne 124 ]; then
+      echo "claude-docker: optional '$1' not read (op exit $op_rc); not forwarding it." >&2
+      [ -n "$op_err" ] && echo "claude-docker:   op: $op_err" >&2
+      return 1
+    fi
     if [ "$op_rc" -eq 124 ]; then
       echo "claude-docker: 'op read $1' got no answer within ${OP_READ_TIMEOUT}s — 1Password slow/unreachable (check VPN / WSL2 egress), or op is retrying a credential the server rejected; skipping this credential." >&2
     else
@@ -1020,7 +1031,8 @@ fi
 # "ASR command silently hit Aegon" bug). Instead we pass them under
 # CLAUDE_DOCKER_AWS_STATIC_* transport vars and entrypoint.sh writes them to
 # ~/.aws/credentials under a named profile (CLAUDE_DOCKER_AWS_STATIC_PROFILE,
-# default "aegon"). Required fields missing → silent no-op.
+# default "aegon"). A failed read of a required field aborts the launch via
+# OP_FAIL_LOG; an absent optional field is just not forwarded.
 if [ "$WITH_AWS" = "1" ]; then
   aws_akid="${AWS_ACCESS_KEY_ID:-}"
   aws_sak="${AWS_SECRET_ACCESS_KEY:-}"
@@ -1031,8 +1043,8 @@ if [ "$WITH_AWS" = "1" ]; then
     aws_ref="${CLAUDE_DOCKER_AWS_OP_REF%/}"
     aws_akid=$(op_read "$aws_ref/access_key_id" || true)
     aws_sak=$(op_read "$aws_ref/secret_access_key" || true)
-    aws_st=$(op_read "$aws_ref/session_token" || true)
-    [ -z "$aws_reg" ] && aws_reg=$(op_read "$aws_ref/region" || true)
+    aws_st=$(op_read "$aws_ref/session_token" optional || true)
+    [ -z "$aws_reg" ] && aws_reg=$(op_read "$aws_ref/region" optional || true)
   fi
   if [ -n "$aws_akid" ] && [ -n "$aws_sak" ]; then
     CLAUDE_DOCKER_AWS_STATIC_PROFILE="${CLAUDE_DOCKER_AWS_STATIC_PROFILE:-aegon}"
