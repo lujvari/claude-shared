@@ -2,7 +2,7 @@
 
 Brain (laslo/brain) needs a real Postgres for its phase 1 tests, and a box
 cannot run one. The owner chose (2026-10-23) to follow the `--mepdb` pattern:
-a `brain_test` database and role on the same host test Postgres, with the DSN
+a `laslo_brain_test` database and role on the same host test Postgres, with the DSN
 held in 1Password and forwarded at launch.
 
 ## What Changes
@@ -22,7 +22,7 @@ held in 1Password and forwarded at launch.
 - **README**: opt-in row, auth-model row, statusline tag, a paragraph under
   the myEntryPoint test Postgres section, and the token-probe "not checked" list.
 
-Out of scope: creating the `brain_test` database and role, and the 1Password
+Out of scope: creating the `laslo_brain_test` database and role, and the 1Password
 item. Both are host-side steps for the owner; nothing in this repo provisions
 the test Postgres.
 

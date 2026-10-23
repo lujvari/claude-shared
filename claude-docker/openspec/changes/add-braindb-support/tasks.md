@@ -11,7 +11,7 @@
 
 ## 3. Host setup (owner)
 
-- [ ] 3.1 `brain_test` database and role on the host test Postgres, rights on that database only
+- [ ] 3.1 `laslo_brain_test` role (LOGIN, non-superuser) and database it owns, on MEP's `myentrypoint-postgres` (host.docker.internal:47303 from a box). The role lives in the pg-data volume: `docker compose down -v` wipes it, recreate with the same password
 - [ ] 3.2 1Password item `laslo-brain-test-postgres` in the `claude-docker` vault, field `dsn`
 
 ## 4. Smoke tests

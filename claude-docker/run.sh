@@ -179,8 +179,8 @@ Wrapper flags:
                       instance, never a database holding real data.
   --braindb           Opt in to the Brain (laslo/brain) test Postgres: forward
                       BRAIN_TEST_DSN so Brain's in-container test suite can
-                      reach its brain_test database. Same shape as --mepdb,
-                      including the defaulted ref, via
+                      reach its laslo_brain_test database. Same shape as
+                      --mepdb, including the defaulted ref, via
                       CLAUDE_DOCKER_BRAINDB_OP_REF:
                         op://claude-docker/laslo-brain-test-postgres/dsn
                       Set it to "" to switch the 1Password path off. Not the
@@ -831,8 +831,9 @@ op_read() {
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
 # --braindb's op-ref: defaulted for the same reason as --mepdb's, one database
-# (laslo/brain's brain_test). The item name carries the laslo- prefix because
-# the unprefixed brain-test-postgres already belongs to myEntryPoint.
+# (laslo_brain_test). The laslo- prefix, here and on the database and role, is
+# because myEntryPoint already owns brain-test-postgres and a brain_test
+# database on the same instance, whose fixtures drop every table.
 BRAINDB_OP_REF="${CLAUDE_DOCKER_BRAINDB_OP_REF-op://claude-docker/laslo-brain-test-postgres/dsn}"
 
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
@@ -1310,7 +1311,7 @@ if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
 fi
 
 # --braindb fallback: the --mepdb block above for Brain's DSN. Same blast-radius
-# caveat — keep the item on the disposable brain_test database only.
+# caveat — keep the item on the disposable laslo_brain_test database only.
 if [ "$WITH_BRAINDB" = "1" ] && [ -z "${BRAIN_TEST_DSN:-}" ] \
    && [ -n "$BRAINDB_OP_REF" ]; then
   if command -v op >/dev/null 2>&1; then
