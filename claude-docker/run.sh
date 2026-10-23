@@ -184,8 +184,8 @@ Wrapper flags:
                       CLAUDE_DOCKER_BRAINDB_OP_REF:
                         op://claude-docker/laslo-brain-test-postgres/dsn
                       Set it to "" to switch the 1Password path off. Not the
-                      myEntryPoint "brain" database --mepdb names: a separate
-                      database and role on the same host test instance.
+                      myEntryPoint "brain" database --mepdb names: Brain has
+                      its own disposable container, brain-test-postgres.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
                       non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so

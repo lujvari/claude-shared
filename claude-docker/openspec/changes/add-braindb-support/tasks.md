@@ -9,10 +9,12 @@
 
 - [x] 2.1 `cd-brain` passes `--braindb`
 
-## 3. Host setup (owner)
+## 3. brain-test-postgres (owner decision 2026-10-23: dedicated container, not MEP's instance)
 
-- [ ] 3.1 `laslo_brain_test` role (LOGIN, non-superuser) and database it owns, on MEP's `myentrypoint-postgres` (host.docker.internal:47303 from a box). The role lives in the pg-data volume: `docker compose down -v` wipes it, recreate with the same password
-- [ ] 3.2 1Password item `laslo-brain-test-postgres` in the `claude-docker` vault, field `dsn`
+- [ ] 3.1 `compose.test.yml` + `.env.test` (op:// refs only) in laslo/brain: postgres:16-alpine, container `brain-test-postgres`, own named volume, `127.0.0.1:47304`, init script creating role `laslo_brain_test` (LOGIN, non-superuser) and the database it owns
+- [x] 3.2 `cd-brain` runs `op run --env-file=.env.test -- docker compose -f compose.test.yml up -d --wait` before launching
+- [ ] 3.3 Owner: 1Password item `laslo-brain-test-postgres` (claude-docker vault) gets fields `superuser-password` and `dsn` beside the role `password`
+- [ ] 3.4 Verify from a box: `host.docker.internal:47304` answers
 
 ## 4. Smoke tests
 
