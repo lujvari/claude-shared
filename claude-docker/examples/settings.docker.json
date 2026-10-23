@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py start; fi"
+            "command": "if [ -f $HOME/.claude/hooks/session-worklog.py ]; then python3 $HOME/.claude/hooks/session-worklog.py start; fi"
           }
         ]
       },
@@ -57,12 +57,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
+            "command": "if [ -f $HOME/.claude/skills/agent-bus/bus.py ]; then python3 $HOME/.claude/skills/agent-bus/bus.py notice; fi; true",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "if grep -qs 'def cmd_watch' /root/.claude/skills/agent-bus/bus.py; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "command": "if grep -qs 'def cmd_watch' $HOME/.claude/skills/agent-bus/bus.py; then python3 $HOME/.claude/skills/agent-bus/bus.py watch; fi",
             "asyncRewake": true,
             "timeout": 21660
           }
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py report; fi"
+            "command": "if [ -f $HOME/.claude/hooks/session-worklog.py ]; then python3 $HOME/.claude/hooks/session-worklog.py report; fi"
           }
         ]
       },
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/hooks/deny-secret-reads.py ]; then python3 /root/.claude/hooks/deny-secret-reads.py; fi"
+            "command": "if [ -f $HOME/.claude/hooks/deny-secret-reads.py ]; then python3 $HOME/.claude/hooks/deny-secret-reads.py; fi"
           }
         ]
       }
@@ -95,7 +95,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py touch; fi"
+            "command": "if [ -f $HOME/.claude/hooks/session-worklog.py ]; then python3 $HOME/.claude/hooks/session-worklog.py touch; fi"
           }
         ]
       }
@@ -105,7 +105,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/hooks/session-worklog.py ]; then python3 /root/.claude/hooks/session-worklog.py stop; fi"
+            "command": "if [ -f $HOME/.claude/hooks/session-worklog.py ]; then python3 $HOME/.claude/hooks/session-worklog.py stop; fi"
           }
         ]
       }
@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if grep -qs 'def cmd_watch' /root/.claude/skills/agent-bus/bus.py; then python3 /root/.claude/skills/agent-bus/bus.py watch; fi",
+            "command": "if grep -qs 'def cmd_watch' $HOME/.claude/skills/agent-bus/bus.py; then python3 $HOME/.claude/skills/agent-bus/bus.py watch; fi",
             "asyncRewake": true,
             "timeout": 21660
           }
@@ -127,7 +127,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f /root/.claude/skills/agent-bus/bus.py ]; then python3 /root/.claude/skills/agent-bus/bus.py notice; fi; true",
+            "command": "if [ -f $HOME/.claude/skills/agent-bus/bus.py ]; then python3 $HOME/.claude/skills/agent-bus/bus.py notice; fi; true",
             "timeout": 10
           }
         ]

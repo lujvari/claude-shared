@@ -31,6 +31,10 @@ SELF_DIR=$(cd -P "$(dirname "$self_src")" && pwd)
 # reuse this wrapper's full feature set — credential opt-ins, statusline tag,
 # git-identity forwarding, host-config bind-mounts — without forking it.
 IMAGE="${CLAUDE_DOCKER_IMAGE:-claude-code:local}"
+# The box user. Must match the uid/gid the Dockerfile gives `claude`.
+BOX_UID=1000
+BOX_GID=1000
+TMPFS_USER_OPTS="uid=$BOX_UID,gid=$BOX_GID,mode=0700"
 
 # Keep this in sync with the flag-parsing case statement below — adding or
 # removing a wrapper flag means updating both the case branch and this heredoc
@@ -222,7 +226,7 @@ Wrapper flags:
                       not daily work.
   --claude-auth       Share the HOST Claude login with the container:
                       bind-mount <config-dir>/.credentials.json (read-write)
-                      over /root/.claude/.credentials.json so host and
+                      over /home/claude/.claude/.credentials.json so host and
                       container use one OAuth token and refreshes propagate
                       both ways. Ends the periodic in-container 401 / "run
                       /login" that happens when a host re-login rotates the
@@ -469,7 +473,7 @@ box_key() {
 
 # uv venvs off the workspace mount. uv's default in-tree .venv lands on the
 # 9p/drvfs bind of C:\, where syncing a many-file package (mkdocs-material,
-# ~13.6k files) outlasts any tool timeout; /root is ext4 and persists. /root is
+# ~13.6k files) outlasts any tool timeout; $HOME is ext4 and persists. $HOME is
 # one claude-code-root volume shared by every box, hence the per-box key. Not
 # per project: a box mounting several uv projects (cd-dev, cd-asr-ref) shares
 # one venv that uv re-syncs on each switch. Cache and venv share a filesystem,
@@ -478,7 +482,7 @@ box_key() {
 venv_key=$(box_key "${CLAUDE_DOCKER_DEV_ROOT:-/nonexistent}")
 case "$venv_key" in
   *[!A-Za-z0-9._-]*|""|.*) ;;
-  *) ENV_ARGS+=("-e" "UV_PROJECT_ENVIRONMENT=/root/.venvs/$venv_key") ;;
+  *) ENV_ARGS+=("-e" "UV_PROJECT_ENVIRONMENT=/home/claude/.venvs/$venv_key") ;;
 esac
 
 # Agent bus: give the box its own mailbox, and only its own. Hub shape — the
@@ -511,7 +515,7 @@ fi
 # --glab deliberately does NOT mount the host glab-cli config. GitLab auth
 # in-container comes solely from GITLAB_TOKEN (host env or the
 # CLAUDE_DOCKER_GITLAB_OP_REF 1Password op-ref below), so no on-disk glab
-# login can act as a silent token source. The /root/.config/glab-cli dir is
+# login can act as a silent token source. The /home/claude/.config/glab-cli dir is
 # always tmpfs-masked (see the mask block near the docker run assembly) so a
 # stray in-container `glab auth login` can't persist and shadow the op-ref
 # either. This forces the proper 1Password (or explicit env) path.
@@ -524,8 +528,8 @@ fi
 # entrypoint.sh writes into ~/.aws/credentials as a named profile — see the
 # --aws static-credential block further down.
 if [ "$WITH_AWS" = "1" ]; then
-  [ -f "$HOME/.aws/config" ] && MOUNT_ARGS+=("-v" "$HOME/.aws/config:/root/.aws/config:ro")
-  [ -d "$HOME/.aws/sso" ]    && MOUNT_ARGS+=("-v" "$HOME/.aws/sso:/root/.aws/sso:ro")
+  [ -f "$HOME/.aws/config" ] && MOUNT_ARGS+=("-v" "$HOME/.aws/config:/home/claude/.aws/config:ro")
+  [ -d "$HOME/.aws/sso" ]    && MOUNT_ARGS+=("-v" "$HOME/.aws/sso:/home/claude/.aws/sso:ro")
 fi
 
 # Terraform Cloud credentials file written by `terraform login` (and `tofu
@@ -537,16 +541,16 @@ fi
 # which docker handles idempotently.
 if [ "$WITH_TFE" = "1" ] || [ "$WITH_TOFU" = "1" ]; then
   [ -f "$HOME/.terraform.d/credentials.tfrc.json" ] \
-    && MOUNT_ARGS+=("-v" "$HOME/.terraform.d/credentials.tfrc.json:/root/.terraform.d/credentials.tfrc.json:ro")
+    && MOUNT_ARGS+=("-v" "$HOME/.terraform.d/credentials.tfrc.json:/home/claude/.terraform.d/credentials.tfrc.json:ro")
 fi
 
 # OpenTofu CLI config file. Distinct from ~/.terraformrc — holds tofu-specific
 # blocks (provider mirrors, plugin cache, dev_overrides). Not credentials, so
-# no tmpfs leak guard is applied for /root/.tofurc when --tofu is unset;
+# no tmpfs leak guard is applied for /home/claude/.tofurc when --tofu is unset;
 # residual config from a prior --tofu session via claude-code-root is
 # documented in the threat model.
 if [ "$WITH_TOFU" = "1" ]; then
-  [ -f "$HOME/.tofurc" ] && MOUNT_ARGS+=("-v" "$HOME/.tofurc:/root/.tofurc:ro")
+  [ -f "$HOME/.tofurc" ] && MOUNT_ARGS+=("-v" "$HOME/.tofurc:/home/claude/.tofurc:ro")
 fi
 
 # ── Persistent config file ────────────────────────────────────────────────
@@ -1197,7 +1201,7 @@ fi
 # from the environment, so there is no ~/.claude.json MCP entry in the middle
 # that could pin a stale literal — the forwarded env var IS the source and a
 # rotation in 1Password lands on the next launch. Keep it that way: an
-# in-container `wrangler login` writes an OAuth token under /root, which is the
+# in-container `wrangler login` writes an OAuth token under $HOME, which is the
 # persistent claude-code-root volume, so that copy would survive every relaunch
 # and reproduce the stale-credential failure --supabase was built to end.
 #
@@ -1508,7 +1512,7 @@ for item in agents commands skills; do
     # cp -RL dereferences all symlinks within the tree so internal symlinks
     # (e.g. skills/foo -> ~/git/repo/skills/foo) resolve inside the container.
     cp -RL "$src" "$stage/$item"
-    MOUNT_ARGS+=("-v" "$stage/$item:/root/.claude/$item:ro")
+    MOUNT_ARGS+=("-v" "$stage/$item:/home/claude/.claude/$item:ro")
   fi
 done
 
@@ -1518,10 +1522,10 @@ done
 # the hook commands into Claude's hook events.
 if [ -d "$SELF_DIR/hooks" ]; then
   cp -RL "$SELF_DIR/hooks" "$stage/hooks"
-  MOUNT_ARGS+=("-v" "$stage/hooks:/root/.claude/hooks:ro")
+  MOUNT_ARGS+=("-v" "$stage/hooks:/home/claude/.claude/hooks:ro")
 fi
 if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
-  MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/CLAUDE.md:/root/.claude/CLAUDE.md:ro")
+  MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro")
 fi
 
 # Statusline: mount the host script as-is, plus a thin wrapper at the canonical
@@ -1535,7 +1539,7 @@ if [ -f "$CLAUDE_CONFIG_DIR/statusline-command.sh" ]; then
 #!/bin/sh
 # claude-docker wrapper — prepends active opt-in flag tag to host statusline.
 input=$(cat)
-body=$(printf '%s' "$input" | sh /root/.claude/statusline-command.original.sh)
+body=$(printf '%s' "$input" | sh /home/claude/.claude/statusline-command.original.sh)
 tag=""
 [ -n "${CLAUDE_DOCKER_FLAGS:-}" ] \
   && tag=$(printf '\033[33mdocker:%s\033[0m ' "$CLAUDE_DOCKER_FLAGS")
@@ -1545,8 +1549,8 @@ printf '%s%s' "$tag" "$body"
 WRAP
   chmod +x "$stage/statusline-command.sh"
   MOUNT_ARGS+=(
-    "-v" "$CLAUDE_CONFIG_DIR/statusline-command.sh:/root/.claude/statusline-command.original.sh:ro"
-    "-v" "$stage/statusline-command.sh:/root/.claude/statusline-command.sh:ro"
+    "-v" "$CLAUDE_CONFIG_DIR/statusline-command.sh:/home/claude/.claude/statusline-command.original.sh:ro"
+    "-v" "$stage/statusline-command.sh:/home/claude/.claude/statusline-command.sh:ro"
   )
 fi
 # Mount settings.docker.json read-only as a *seed* (not directly as
@@ -1559,12 +1563,12 @@ fi
 # `/effort` changes are shared too. That is accepted; entrypoint.sh records
 # why the per-container alternatives fail.
 [ -f "$CLAUDE_CONFIG_DIR/settings.docker.json" ] \
-  && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/root/.claude/settings.docker.json:ro")
+  && MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/settings.docker.json:/home/claude/.claude/settings.docker.json:ro")
 
 # --claude-auth: share the host Claude OAuth login with the container.
 # Bind-mount the host credentials file (read-write) over the path Claude
 # reads inside the container. It sits "below" the claude-code-home volume
-# mount (/root/.claude) by path depth, so Docker overlays it regardless of
+# mount (/home/claude/.claude) by path depth, so Docker overlays it regardless of
 # -v ordering — same mechanism as settings.docker.json above. RW (not :ro)
 # so an in-session token refresh writes straight back to the host file,
 # keeping a single source of truth and ending the host/container token
@@ -1574,7 +1578,7 @@ fi
 # opt-in. Fails loudly if the host has never logged in.
 if [ "$WITH_CLAUDE_AUTH" = "1" ]; then
   if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
-    MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/.credentials.json:/root/.claude/.credentials.json")
+    MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/.credentials.json:/home/claude/.claude/.credentials.json")
   else
     echo "claude-docker: --claude-auth set but $CLAUDE_CONFIG_DIR/.credentials.json not found; run 'claude' and /login on the host first" >&2
     exit 1
@@ -1613,17 +1617,19 @@ if [ "$EPHEMERAL" = "0" ]; then
   # Mask persisted in-container auth state when the opt-in flag is off, so a
   # prior `gh`/`glab`/`terraform`/`tofu` auth login stored under
   # claude-code-root doesn't leak into a session the user didn't ask to grant
-  # those creds to. The /root/.terraform.d mask is gated on both --tfe and
+  # those creds to. The ~/.terraform.d mask is gated on both --tfe and
   # --tofu being off: `terraform login` and `tofu login` write the same path,
   # so either flag is sufficient consent to expose it.
-  [ "$WITH_GH" = "0" ]   && MOUNT_ARGS+=("--tmpfs" "/root/.config/gh")
+  # The masks are owned by the box user: a bare tmpfs is root 0755, and gh or
+  # glab writing its first config there would fail with EACCES.
+  [ "$WITH_GH" = "0" ]   && MOUNT_ARGS+=("--tmpfs" "/home/claude/.config/gh:$TMPFS_USER_OPTS")
   # glab-cli is ALWAYS masked (not gated on --glab): --glab no longer mounts
   # the host config and GitLab auth is GITLAB_TOKEN-only, so no persisted
   # in-container glab login may ever act as a credential source or shadow the
   # op-ref.
-  MOUNT_ARGS+=("--tmpfs" "/root/.config/glab-cli")
-  [ "$WITH_TFE" = "0" ] && [ "$WITH_TOFU" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/root/.terraform.d")
-  MOUNT_ARGS=(-v claude-code-root:/root -v claude-code-home:/root/.claude "${MOUNT_ARGS[@]}")
+  MOUNT_ARGS+=("--tmpfs" "/home/claude/.config/glab-cli:$TMPFS_USER_OPTS")
+  [ "$WITH_TFE" = "0" ] && [ "$WITH_TOFU" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/home/claude/.terraform.d:$TMPFS_USER_OPTS")
+  MOUNT_ARGS=(-v claude-code-root:/home/claude -v claude-code-home:/home/claude/.claude "${MOUNT_ARGS[@]}")
 fi
 
 # --host-net / CLAUDE_DOCKER_NETWORK: join the given docker network (typically
@@ -1730,11 +1736,17 @@ if [ -t 0 ] && [ -t 1 ]; then
   DOCKER_TTY_FLAGS=-it
 fi
 
+# Run as uid/gid 1000 (the image's `claude` user), never root: as root, every
+# file a box wrote through a /mnt/c bind mount landed in drvfs metadata as
+# uid 0 / mode 0744, so the WSL user (uid 1000) could neither run nor edit it.
+# Fixed rather than "$(id -u)": the image's home, the named volumes and the
+# pre-built SDKs under /opt are owned by 1000. No capability is added back —
+# DAC_OVERRIDE/FOWNER existed only so root could write files it didn't own,
+# and a non-root process gets no effective capabilities anyway.
 docker run --rm "$DOCKER_TTY_FLAGS" \
+  --user "$BOX_UID:$BOX_GID" \
   --security-opt no-new-privileges \
   --cap-drop ALL \
-  --cap-add DAC_OVERRIDE \
-  --cap-add FOWNER \
   "${MOUNT_ARGS[@]}" \
   "${ENV_ARGS[@]}" \
   -w "$CWD" \

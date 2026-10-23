@@ -82,18 +82,6 @@ ARG DOTNET_SDK_9_SHA512_AARCH64=f9c957867bddea8f82ec0459432ce7ddff8fafc846537b80
 # also work but drags in icu-devtools + libc6-dev for headers nothing uses.
 ARG ICU_PACKAGE=libicu78
 
-# Make apt runnable under --cap-drop ALL at runtime. Two pieces:
-#  1. APT::Sandbox::User "root" stops the http method from setgroups()→_apt
-#     (needs CAP_SETGID, dropped at runtime).
-#  2. chown archives/partial to root so apt can write it without
-#     CAP_DAC_OVERRIDE/CAP_FOWNER — Ubuntu ships it as _apt:root 0700.
-#     lists/partial doesn't need chowning: apt re-creates it as root at
-#     runtime now that sandbox user is root.
-# Safe here: the container itself is the security boundary, not apt's
-# internal user split.
-RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/10no-sandbox \
- && chown root:root /var/cache/apt/archives/partial
-
 # NodeSource ships Node 20 LTS pinned to upstream releases — Ubuntu's archive
 # `nodejs` tracks an older minor and isn't LTS-pinned. `nodistro` is
 # NodeSource's distro-independent codename (works on any Debian/Ubuntu).
@@ -184,11 +172,12 @@ RUN set -e; ARCH=$(uname -m); \
 # base is glibc, so we use linux-x64 / linux-arm64 (not the -musl variants).
 #
 # Installed under /opt so it survives the claude-code-root named volume
-# masking /root at runtime (same rationale as tfenv/gradle/tofuenv). The
-# native binary self-checks for itself at /root/.local/bin/claude (the
-# launcher path it would normally create via `claude install`) — wiring
-# that symlink up in the image's /root would be masked on every bump, so
-# the entrypoint creates it at container start instead.
+# masking $HOME (/home/claude) at runtime (same rationale as
+# tfenv/gradle/tofuenv). The native binary self-checks for itself at
+# ~/.local/bin/claude (the launcher path it would normally create via
+# `claude install`) — wiring that symlink up in the image's home would be
+# masked on every bump, so the entrypoint creates it at container start
+# instead.
 RUN set -e; ARCH=$(uname -m); \
     case "$ARCH" in \
       x86_64)  PLATFORM=linux-x64;   SHA="${CLAUDE_CODE_SHA256_X86_64}" ;; \
@@ -217,8 +206,10 @@ RUN npm install -g --ignore-scripts \
 # ship NO terraform binary; the project's `.terraform-version` (or an
 # interactive `tfenv install <v>`) fetches the right version from
 # releases.hashicorp.com at runtime, in the same runtime-fetch class as
-# `pnpm dlx`/`uvx`. Installed under /opt (not /root) so image-level
+# `pnpm dlx`/`uvx`. Installed under /opt (not $HOME) so image-level
 # version bumps aren't shadowed by the claude-code-root named volume.
+# Owned by the runtime user (uid 1000): `tfenv install` writes versions/
+# inside the tfenv tree. Same for tofuenv, Flutter and the Android SDK below.
 # Placed after the heavier npm install so a tfenv version bump doesn't
 # invalidate that layer's cache (tfenv pins move far less often than the
 # claude-code/openspec/pnpm pins above).
@@ -227,6 +218,7 @@ RUN curl -fsSL "https://github.com/tfutils/tfenv/archive/refs/tags/v${TFENV_VERS
  && echo "${TFENV_SHA256}  /tmp/tfenv.tar.gz" | sha256sum -c - \
  && mkdir -p /opt/tfenv \
  && tar -xzf /tmp/tfenv.tar.gz -C /opt/tfenv --strip-components=1 \
+ && chown -R 1000:1000 /opt/tfenv \
  && ln -s /opt/tfenv/bin/tfenv /usr/local/bin/tfenv \
  && ln -s /opt/tfenv/bin/terraform /usr/local/bin/terraform \
  && rm /tmp/tfenv.tar.gz
@@ -234,24 +226,29 @@ RUN curl -fsSL "https://github.com/tfutils/tfenv/archive/refs/tags/v${TFENV_VERS
 # tofuenv — OpenTofu version manager. Same rationale as tfenv above:
 # pure-bash, arch-independent, ship NO tofu binary version (projects pin
 # their own via .opentofu-version). Installed under /opt for the same
-# upgrade-cleanliness reason — anything under /root would be frozen by the
+# upgrade-cleanliness reason — anything under $HOME would be frozen by the
 # claude-code-root named volume on first run.
 RUN curl -fsSL "https://github.com/tofuutils/tofuenv/archive/refs/tags/v${TOFUENV_VERSION}.tar.gz" \
       -o /tmp/tofuenv.tar.gz \
  && echo "${TOFUENV_SHA256}  /tmp/tofuenv.tar.gz" | sha256sum -c - \
  && mkdir -p /opt/tofuenv \
  && tar -xzf /tmp/tofuenv.tar.gz -C /opt/tofuenv --strip-components=1 \
+ && chown -R 1000:1000 /opt/tofuenv \
  && ln -s /opt/tofuenv/bin/tofuenv /usr/local/bin/tofuenv \
  && ln -s /opt/tofuenv/bin/tofu /usr/local/bin/tofu \
  && rm /tmp/tofuenv.tar.gz
 
-# Put /root/.local/bin on PATH so user-space installs land on PATH for every
+# Put ~/.local/bin on PATH so user-space installs land on PATH for every
 # process in the container — including non-interactive `bash -c` subprocesses
-# spawned by Claude's Bash tool, which do NOT source /root/.bashrc. Files under
-# /root/.local survive across runs via the claude-code-root named volume, so
+# spawned by Claude's Bash tool, which do NOT source ~/.bashrc. Files under
+# ~/.local survive across runs via the claude-code-root named volume, so
 # `uv tool install <pkg>` (or `pipx install <pkg>`) inside a container becomes
-# a persistent user-space install.
-ENV PATH=/root/.local/bin:$PATH
+# a persistent user-space install. NPM_CONFIG_PREFIX does the same for
+# `npm install -g`: the runtime user can't write /usr, so global npm installs
+# land in ~/.local too. Set after the build-time `npm install -g` above, which
+# runs as root and still targets /usr.
+ENV PATH=/home/claude/.local/bin:$PATH \
+    NPM_CONFIG_PREFIX=/home/claude/.local
 
 # Azure CLI — Microsoft's apt repo. Same trust model as the `gh` block above:
 # keyring fetched at build, repo pinned by signed-by. No version pin (matches
@@ -287,7 +284,8 @@ RUN apt-get update \
 # gradle is for bootstrapping new projects (`gradle wrapper --gradle-version
 # X.Y`) and for environments where wrapper download is blocked. Installed
 # under /opt to survive the claude-code-root named volume (same rationale as
-# tfenv/tofuenv above). Hash matches
+# tfenv/tofuenv above). Stays root-owned: gradle never writes to its own
+# install tree (its caches live in ~/.gradle). Hash matches
 # services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip.sha256.
 RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
       -o /tmp/gradle.zip \
@@ -301,8 +299,10 @@ RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSIO
 # unpacks into `cmdline-tools/`, which we rename to `latest`. Licenses
 # accepted at build time so first-time `gradlew assembleDebug` doesn't
 # prompt. Installed under /opt for the same upgrade-cleanliness reason as
-# tfenv/gradle — anything under /root would be frozen by the
-# claude-code-root named volume on first run.
+# tfenv/gradle — anything under $HOME would be frozen by the
+# claude-code-root named volume on first run. Owned by the runtime user
+# (uid 1000) because the Android Gradle Plugin installs missing SDK
+# components into ANDROID_HOME on demand.
 #
 # Platform + Build-Tools versions track Android API level; bump them in
 # step. Three SDK packages cost ~500 MB image-side; that's the price of
@@ -328,7 +328,8 @@ RUN curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-
  && "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
       "platform-tools" \
       "platforms;android-34" \
-      "build-tools;34.0.0" > /dev/null
+      "build-tools;34.0.0" > /dev/null \
+ && chown -R 1000:1000 "${ANDROID_HOME}"
 
 ENV PATH=${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:/opt/gradle-${GRADLE_VERSION}/bin:${PATH}
 
@@ -337,11 +338,13 @@ ENV PATH=${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools
 # back to a shallow git clone at the same tag, since Flutter publishes no arm64
 # Linux tarball. Installed under /opt so the claude-code-root named volume
 # doesn't mask it at runtime (same rationale as tfenv/gradle/android-sdk).
-# safe.directory is set --system (persists in /etc/gitconfig; a /root/.gitconfig
+# Owned by the runtime user (uid 1000): the flutter tool takes a lock on, and
+# refreshes stamps in, bin/cache inside the SDK on every run.
+# safe.directory is set --system (persists in /etc/gitconfig; a ~/.gitconfig
 # entry would be masked by the volume) so Flutter's internal git calls — it reads
 # its own version from the SDK's git checkout, so .git must stay — never trip
 # dubious-ownership. We enable web (default-on in 3.x, so it survives the masked
-# /root config) and `precache --web --universal` at BUILD so a fresh,
+# home config) and `precache --web --universal` at BUILD so a fresh,
 # egress-limited sandbox never downloads engine artifacts at first run, then
 # prune the android/ios engine artifacts the stable tarball bundles (~0.8 GB):
 # this image is web-first and the bundled Android toolchain is a bonus, not a
@@ -363,7 +366,8 @@ RUN set -e; ARCH=$(uname -m); \
  && /opt/flutter/bin/flutter config --no-analytics --enable-web > /dev/null \
  && /opt/flutter/bin/flutter precache --web --universal \
  && rm -rf /opt/flutter/bin/cache/artifacts/engine/android-* \
-           /opt/flutter/bin/cache/artifacts/engine/ios*
+           /opt/flutter/bin/cache/artifacts/engine/ios* \
+ && chown -R 1000:1000 /opt/flutter
 
 # Chrome runtime libraries for the headless Chrome for Testing binary below.
 # Exactly the shared objects `ldd chrome` reports as NEEDED, plus libnss3/libnspr4
@@ -383,14 +387,15 @@ RUN apt-get update \
 # still works — only the browser-device test/run path is unavailable there.
 # Installed under /opt so the claude-code-root named volume doesn't mask it.
 # CHROME_EXECUTABLE (set in the ENV below) points at a wrapper that forces
-# --no-sandbox: the container runs as root under --cap-drop ALL, where Chrome's
-# namespace sandbox can't initialise; --no-sandbox is safe because the container
-# itself is the security boundary (IS_SANDBOX=1 + no-new-privileges).
+# --no-sandbox: Chrome's namespace sandbox needs user namespaces, which Docker's
+# default seccomp profile denies under --cap-drop ALL, and its setuid-helper
+# fallback is ruled out here (no setuid binaries, no-new-privileges). --no-sandbox
+# is safe because the container itself is the security boundary.
 # The matching chromedriver is installed in the same layer and symlinked onto
 # PATH. `google-chrome` is symlinked to the --no-sandbox wrapper too: chromedriver
 # launches the browser itself and finds it by searching PATH for that name, so
 # without the symlink it would either fail to locate Chrome or start it with the
-# namespace sandbox enabled, which cannot initialise as root under --cap-drop ALL.
+# namespace sandbox enabled, which cannot initialise in this container.
 RUN set -e; ARCH=$(uname -m); \
     if [ "$ARCH" = x86_64 ]; then \
       curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-linux64.zip" \
@@ -412,13 +417,13 @@ RUN set -e; ARCH=$(uname -m); \
       echo "Chrome for Testing unavailable for $ARCH; skipping (flutter build web still works)" >&2; \
     fi
 
-# Flutter + Dart on PATH for the runtime user (root); FLUTTER_ROOT lets the tool
-# find its SDK. PUB_CACHE lives under /root so package downloads persist in the
+# Flutter + Dart on PATH for the runtime user (claude); FLUTTER_ROOT lets the tool
+# find its SDK. PUB_CACHE lives under $HOME so package downloads persist in the
 # claude-code-root named volume across runs — the SDK itself is baked at /opt,
 # not here. CHROME_EXECUTABLE is the --no-sandbox wrapper (absent on non-x86_64,
 # where Flutter just reports Chrome as unavailable).
 ENV FLUTTER_ROOT=/opt/flutter \
-    PUB_CACHE=/root/.pub-cache \
+    PUB_CACHE=/home/claude/.pub-cache \
     CHROME_EXECUTABLE=/opt/chrome/chrome-wrapper \
     PATH=/opt/flutter/bin:${PATH}
 
@@ -440,7 +445,7 @@ ENV FLUTTER_ROOT=/opt/flutter \
 # layout (sdk/<ver>/ and shared/<fx>/<ver>/ merge), and it gives runtimes 8 and 9
 # as well, so `dotnet test` can execute net8.0 and net9.0 assemblies.
 #
-# Under /opt, not /root: the claude-code-root named volume masks /root at
+# Under /opt, not $HOME: the claude-code-root named volume masks $HOME at
 # runtime. The NuGet package cache is deliberately left at its default
 # (~/.nuget/packages) so downloads DO land in that volume and persist between
 # runs; only the SDK itself is baked.
@@ -467,7 +472,7 @@ RUN set -e; ARCH=$(uname -m); \
     done; \
     ln -s /opt/dotnet/dotnet /usr/local/bin/dotnet
 
-# DOTNET_ROOT is what `dotnet` and MSBuild use to locate the SDK; /root/.dotnet/tools
+# DOTNET_ROOT is what `dotnet` and MSBuild use to locate the SDK; ~/.dotnet/tools
 # is where `dotnet tool install -g` puts shims (inside the named volume, so
 # globally-installed tools survive restarts). Telemetry off and NOLOGO on for the
 # same reason as elsewhere: no phoning home from a sandbox, and no first-run
@@ -475,13 +480,13 @@ RUN set -e; ARCH=$(uname -m); \
 ENV DOTNET_ROOT=/opt/dotnet \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
-    PATH=/opt/dotnet:/root/.dotnet/tools:${PATH}
+    PATH=/opt/dotnet:/home/claude/.dotnet/tools:${PATH}
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required
 # (not `on`) because Claude does not send the kitty activation request that
 # `on` waits for — see claude-code#26629. /etc/tmux.conf, not
-# /root/.tmux.conf, because /root is masked by the claude-code-root named
+# ~/.tmux.conf, because $HOME is masked by the claude-code-root named
 # volume at runtime. Harmless under tmux -CC: iTerm2 control mode bypasses
 # tmux's input layer. Placed after npm install so edits don't invalidate
 # the heavy AWS CLI / uv / glab / npm download layers above.
@@ -490,16 +495,19 @@ set -s extended-keys always
 set -as terminal-features "*:extkeys"
 EOF
 
-# claude-docker-entrypoint: translates forwarded credential tokens into
-# system-level `git insteadOf` rewrites at container start, so in-container
-# `git` can clone private HTTPS repos against hosts the matching --gh/--glab
-# flag is already authorising. Writes /etc/gitconfig (image-layer overlay,
-# discarded on `docker run --rm` exit) — never the named volume's /root.
-# See openspec/changes/add-git-insteadof/design.md.
+# claude-docker-entrypoint: installs per-host git credential helpers at
+# container start, so in-container `git` can clone private HTTPS repos against
+# hosts the matching --gh/--glab/--ado flag is already authorising. The runtime
+# user can't write /etc/gitconfig, so the system config includes
+# /tmp/claude-docker-gitconfig and the entrypoint writes that file instead
+# (container writable layer, discarded on `docker run --rm` exit) — never the
+# named volume's $HOME. A missing include file is silently skipped by git.
+# See openspec/changes/use-git-credential-helper/.
 # Placed after the tmux conf so edits here don't invalidate heavier
 # upstream layers (apt/npm/glab/aws/uv/tfenv).
 COPY entrypoint.sh /usr/local/bin/claude-docker-entrypoint
-RUN chmod +x /usr/local/bin/claude-docker-entrypoint
+RUN chmod +x /usr/local/bin/claude-docker-entrypoint \
+ && git config --system include.path /tmp/claude-docker-gitconfig
 
 # DISABLE_AUTOUPDATER=1 keeps the pinned CLAUDE_CODE_VERSION authoritative —
 # without it, claude auto-replaces itself at runtime, defeating the
@@ -510,9 +518,51 @@ ENV CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Container runs as root by design: IS_SANDBOX=1 + --cap-drop ALL + no-new-privileges
-# make the container itself the security boundary. Do not add a USER directive
-# without reworking the host-config bind-mount layout.
+# Runtime user: uid/gid 1000, named claude, HOME /home/claude. uid 1000 is
+# the WSL login user, so files a box writes through a /mnt/c bind mount carry
+# that user's uid in drvfs metadata. As root they carried uid 0 / mode 0744,
+# which the WSL user could neither run nor edit. run.sh also passes
+# `--user 1000:1000`; the USER line covers a bare `docker run` of the image.
+# The base image already has uid 1000 as `ubuntu`, so it is renamed rather
+# than a second user being added.
+#
+# Not widened: no sudo, no setuid binaries, no root-then-drop entrypoint (that
+# would need SETUID/SETGID at start). The process is unprivileged from exec on,
+# and still runs under --cap-drop ALL + no-new-privileges, IS_SANDBOX=1.
+#
+# The home dirs are pre-created with the user's ownership because Docker copies
+# image content, ownership included, into an empty named volume on first mount,
+# and because runc creates a missing mountpoint parent as root. Without
+# them, the first `--tmpfs ~/.config/gh` or `--aws` mount would leave
+# ~/.config or ~/.aws root-owned and unwritable to the user.
+#
+# /root becomes a symlink to /home/claude so absolute /root/... paths recorded
+# by earlier root-run boxes keep resolving: plugin install paths in
+# ~/.claude/plugins, uv venv and tool shebangs, and hook commands in older
+# settings.docker.json copies. Last in the file because every RUN above runs as
+# root with HOME=/root; doing this earlier would leave root-owned build caches
+# under /home/claude.
+RUN if [ "$(getent passwd 1000 | cut -d: -f1)" = ubuntu ]; then \
+      usermod --login claude --home /home/claude --move-home ubuntu \
+   && groupmod --new-name claude ubuntu; \
+    else \
+      useradd --uid 1000 --user-group --create-home --home-dir /home/claude --shell /bin/bash claude; \
+    fi \
+ && [ "$(id -u claude)" = 1000 ] && [ "$(id -g claude)" = 1000 ] \
+ && install -d -o 1000 -g 1000 -m 0755 \
+      /home/claude/.claude \
+      /home/claude/.config \
+      /home/claude/.config/gh \
+      /home/claude/.config/glab-cli \
+      /home/claude/.aws \
+      /home/claude/.terraform.d \
+      /home/claude/.local \
+      /home/claude/.local/bin \
+      /home/claude/.venvs \
+ && rm -rf /root \
+ && ln -s /home/claude /root
+
+USER 1000:1000
 
 WORKDIR /workspaces
 

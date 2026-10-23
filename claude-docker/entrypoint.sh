@@ -14,25 +14,41 @@
 # progress), so insteadOf leaks the token into any transcript or log that
 # captures git output. The credential helper supplies the secret during the
 # HTTPS handshake instead — URLs stay bare everywhere, and the token never
-# even lands in /etc/gitconfig (the helper holds only a reference to the
+# even lands in a git config file (the helper holds only a reference to the
 # env var, not its value).
 #
-# Writes /etc/gitconfig (--system), NOT /root/.gitconfig (--global), so the
-# config is gone with the writable layer on `docker run --rm` exit — never
-# persists via the claude-code-root named volume. Precedence:
-# --local > --global > --system, so a user's own /root/.gitconfig entry
-# wins, preserving user intent.
+# Writes $GIT_RUNTIME_CONFIG, which /etc/gitconfig includes (the Dockerfile
+# wires the include.path; the runtime user can't write /etc/gitconfig itself).
+# It sits in /tmp, so the config is gone with the writable layer on
+# `docker run --rm` exit — never persists via the claude-code-root named
+# volume. Being included from the system file, it keeps --system precedence:
+# --local > --global > --system, so a user's own ~/.gitconfig entry wins,
+# preserving user intent.
 set -eu
+
+GIT_RUNTIME_CONFIG=/tmp/claude-docker-gitconfig
+: > "$GIT_RUNTIME_CONFIG"
+
+# Fail with the fix, not a bare EACCES, when part of $HOME is still owned by
+# root from the days boxes ran as uid 0 (or was created as root by Docker as a
+# mountpoint parent). The one-off volume chown in the README fixes it.
+need_writable_dir() {
+  mkdir -p "$1" 2>/dev/null || true
+  if [ ! -w "$1" ]; then
+    echo "claude-docker-entrypoint: $1 is not writable by uid $(id -u); the claude-code-root volume predates the non-root image. Run the one-off volume migration in claude-docker/README.md." >&2
+    exit 1
+  fi
+}
 
 # claude-code native binary lives at /opt/claude-code/claude (image layer,
 # survives volume masking on bump). The binary self-checks for itself at
-# /root/.local/bin/claude — wire that symlink up here so it always points
+# ~/.local/bin/claude — wire that symlink up here so it always points
 # to the current image's binary regardless of what the claude-code-root
 # named volume has cached from a prior image. `-f` overwrites any stale
 # regular file or symlink left there by an earlier `claude install`.
 if [ -x /opt/claude-code/claude ]; then
-  mkdir -p /root/.local/bin
-  ln -sf /opt/claude-code/claude /root/.local/bin/claude
+  need_writable_dir "$HOME/.local/bin"
+  ln -sf /opt/claude-code/claude "$HOME/.local/bin/claude"
 fi
 
 # --aws static credentials → named profile in ~/.aws/credentials.
@@ -47,7 +63,7 @@ fi
 if [ -n "${CLAUDE_DOCKER_AWS_STATIC_KEY_ID:-}" ] \
    && [ -n "${CLAUDE_DOCKER_AWS_STATIC_SECRET:-}" ]; then
   aws_profile="${CLAUDE_DOCKER_AWS_STATIC_PROFILE:-aegon}"
-  mkdir -p /root/.aws
+  need_writable_dir "$HOME/.aws"
   {
     printf '[%s]\n' "$aws_profile"
     printf 'aws_access_key_id = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_KEY_ID"
@@ -58,8 +74,8 @@ if [ -n "${CLAUDE_DOCKER_AWS_STATIC_KEY_ID:-}" ] \
     if [ -n "${CLAUDE_DOCKER_AWS_STATIC_REGION:-}" ]; then
       printf 'region = %s\n' "$CLAUDE_DOCKER_AWS_STATIC_REGION"
     fi
-  } > /root/.aws/credentials
-  chmod 600 /root/.aws/credentials
+  } > "$HOME/.aws/credentials"
+  chmod 600 "$HOME/.aws/credentials"
 fi
 unset CLAUDE_DOCKER_AWS_STATIC_KEY_ID CLAUDE_DOCKER_AWS_STATIC_SECRET \
       CLAUDE_DOCKER_AWS_STATIC_TOKEN CLAUDE_DOCKER_AWS_STATIC_REGION \
@@ -68,7 +84,7 @@ unset CLAUDE_DOCKER_AWS_STATIC_KEY_ID CLAUDE_DOCKER_AWS_STATIC_SECRET \
 # Inject a git credential helper for each host in a CSV list. The helper
 # runs at auth time and reads the token from the named env var, so the
 # secret is supplied during the HTTPS handshake and never appears in a URL
-# or in /etc/gitconfig.
+# or in any git config file.
 #
 # Args:
 #   $1 tok       — resolved token VALUE, used ONLY for the present/valid
@@ -113,8 +129,8 @@ inject_credential() {
     # + PAT password). Helper emits only the password, read live from the
     # env var; ${tok_expr} is substituted by THIS shell into the stored
     # string, while \$1 / the printf format stay literal for git's runtime.
-    git config --system "credential.https://${host}.username" "oauth2"
-    git config --system "credential.https://${host}.helper" \
+    git config --file "$GIT_RUNTIME_CONFIG" "credential.https://${host}.username" "oauth2"
+    git config --file "$GIT_RUNTIME_CONFIG" "credential.https://${host}.helper" \
       "!f() { test \"\$1\" = get && printf \"password=%s\n\" \"${tok_expr}\"; }; f"
   done
   IFS=$old_ifs
@@ -140,7 +156,7 @@ inject_credential "${GITLAB_TOKEN:-}" "${CLAUDE_DOCKER_GITLAB_HOSTS:-gitlab.com}
 inject_credential "${AZURE_DEVOPS_EXT_PAT:-}" "${CLAUDE_DOCKER_ADO_HOSTS:-dev.azure.com}" '$AZURE_DEVOPS_EXT_PAT'
 
 # Writable settings. run.sh bind-mounts settings.docker.json read-only as a
-# *seed* at /root/.claude/settings.docker.json; copy it onto the real
+# *seed* at ~/.claude/settings.docker.json; copy it onto the real
 # settings.json on every start. This makes settings.json a plain writable
 # file (a read-only single-file bind mount can't be rename()'d over, which is
 # how `/effort` and other in-session settings writes persist — that's the
@@ -148,7 +164,7 @@ inject_credential "${AZURE_DEVOPS_EXT_PAT:-}" "${CLAUDE_DOCKER_ADO_HOSTS:-dev.az
 #
 # The file is SHARED, not per-container: settings.json sits on the
 # claude-code-home volume, which every non-ephemeral container mounts at
-# /root/.claude. So each container start resets it to the seed for all
+# ~/.claude. So each container start resets it to the seed for all
 # running containers, and a live `/effort` change is seen by any container's
 # next `claude` start. Only --ephemeral containers get their own copy.
 # Accepted as is. Ways to make it per-container that do NOT work:
@@ -159,8 +175,9 @@ inject_credential "${AZURE_DEVOPS_EXT_PAT:-}" "${CLAUDE_DOCKER_ADO_HOSTS:-dev.az
 # The remaining route is a per-container CLAUDE_CONFIG_DIR with the shared
 # state linked back in. It was judged too fragile, because Claude Code also
 # refuses to write into symlinked directories.
-if [ -f /root/.claude/settings.docker.json ]; then
-  cp -f /root/.claude/settings.docker.json /root/.claude/settings.json
+if [ -f "$HOME/.claude/settings.docker.json" ]; then
+  need_writable_dir "$HOME/.claude"
+  cp -f "$HOME/.claude/settings.docker.json" "$HOME/.claude/settings.json"
 fi
 
 # `exec` so signals (Ctrl-C in tmux, container stop) reach claude/tmux
