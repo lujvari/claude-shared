@@ -1,10 +1,37 @@
 #!/usr/bin/env bash
 # claude-docker launcher: myEntryPoint (personal).
-# --mepdb forwards POSTGRES_TEST_URL, the brain test Postgres DSN, from
-# 1Password. That DSN carries its password — test instance only.
+# --mepdb forwards POSTGRES_TEST_URL, the DSN of MEP's dedicated test Postgres
+# (below), from 1Password. That DSN carries its password — test instance only.
 # --hetzner-infra is deliberately NOT baked in: it can delete the server and
 # its backups, so add it per session for infra work (`cd-mep --hetzner-infra`).
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "myEntryPoint"
+
+# myentrypoint-test-postgres: MEP's own disposable test database, defined in
+# myEntryPoint/compose.test.yml (loopback 47304; boxes reach it at
+# host.docker.internal:47304, the DSN --mepdb forwards). Brought up before
+# every launch; `up --wait` is a no-op when it is already healthy. Always
+# through `op run`: compose.test.env holds the op:// ref for the role password.
+# Unlike cd-brain, a failure only warns and the launch goes ahead, so the box
+# stays usable for work that needs no database; test-db.sh fails loudly in
+# there anyway.
+# Docker Desktop doesn't fail `up` when 47304 is taken: the container comes up
+# healthy with the port silently unpublished, and stays that way after the
+# port frees (later `up --wait` calls are no-ops). So check the publication,
+# recreate once if it's missing, and warn only if that doesn't fix it.
+mep_test_db() {
+  ( cd "$ws" && op run --env-file=compose.test.env -- \
+      docker compose -f compose.test.yml up -d --wait "$@" ) 2>&1
+}
+mep_test_db_published() {
+  [ -n "$(docker port myentrypoint-test-postgres 5432/tcp 2>/dev/null)" ]
+}
+mep_test_db_warn() { printf 'MEP test database unavailable: %s\n' "$1" >&2; }
+if ! out=$(mep_test_db) || { ! mep_test_db_published && ! out=$(mep_test_db --force-recreate); }; then
+  mep_test_db_warn "$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -n1)"
+elif ! mep_test_db_published; then
+  mep_test_db_warn "127.0.0.1:47304 not published (port in use?)"
+fi
+
 exec "$CD_RUN" --claude-auth --gh --mepdb "$ws" "$@"
