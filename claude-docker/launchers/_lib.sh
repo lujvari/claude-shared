@@ -21,6 +21,11 @@ export CLAUDE_DOCKER_DEV_ROOT="$DEV"
 # without it; an explicit CLAUDE_DOCKER_BUS_DIR still wins.
 export CLAUDE_DOCKER_BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-$DEV/.agent-bus}"
 
+# Every launched box gets the remote Brain MCP (--brain in run.sh). The same
+# exported-not-flagged split as the bus. It fails closed, so a launcher whose
+# Brain refs don't resolve is blocked. Export CLAUDE_DOCKER_BRAIN=0 to opt out.
+export CLAUDE_DOCKER_BRAIN="${CLAUDE_DOCKER_BRAIN:-1}"
+
 # cd_workspace <path-relative-to-dev-root>
 #
 # Sets $ws to the absolute workspace path, failing loudly when it is missing.

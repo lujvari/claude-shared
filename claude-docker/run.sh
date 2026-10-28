@@ -195,6 +195,16 @@ Wrapper flags:
                       Set it to "" to switch the 1Password path off. Not the
                       myEntryPoint "brain" database --mepdb names: Brain has
                       its own disposable container, brain-test-postgres.
+  --brain             Opt in to the remote Brain MCP (brain.karansjet.dev,
+                      behind Cloudflare Access): forward
+                      BRAIN_CF_ACCESS_CLIENT_ID / _SECRET and seed a
+                      user-scope "brain" MCP entry that references them.
+                      CLAUDE_DOCKER_BRAIN=1 does the same; every cd-* launcher
+                      exports it. Defaulted refs, overridable via
+                      CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF / _SECRET_OP_REF:
+                        op://claude-docker/brain-cf-access/client-id
+                        op://claude-docker/brain-cf-access/client-secret
+                      Set either to "" to switch its 1Password path off.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
                       non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so
@@ -339,6 +349,10 @@ WITH_OPENROUTER=0
 WITH_SONAR=0
 WITH_MEPDB=0
 WITH_BRAINDB=0
+# Exported by launchers/_lib.sh, so every cd-* box gets Brain while a bare
+# run.sh stays opt-in (same split as CLAUDE_DOCKER_BUS_DIR).
+WITH_BRAIN=0
+[ "${CLAUDE_DOCKER_BRAIN:-}" = "1" ] && WITH_BRAIN=1
 WITH_RR_E2E=0
 WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
@@ -371,6 +385,7 @@ for arg in "$@"; do
     --sonar)        WITH_SONAR=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
     --braindb)      WITH_BRAINDB=1 ;;
+    --brain)        WITH_BRAIN=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
     --hetzner-infra) WITH_HETZNER_INFRA=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
@@ -655,6 +670,10 @@ fi
 # Same reasoning, Brain's suite: its own variable name rather than a second
 # POSTGRES_TEST_URL, so --mepdb and --braindb on one launch cannot collide.
 [ "$WITH_BRAINDB" = "1" ] && ENV_VARS+=(BRAIN_TEST_DSN)
+# A Cloudflare Access service token is an id/secret pair, and both headers are
+# required, so both vars travel. The id is not secret on its own but lives in
+# the same 1Password item. entrypoint.sh turns them into the "brain" MCP entry.
+[ "$WITH_BRAIN" = "1" ] && ENV_VARS+=(BRAIN_CF_ACCESS_CLIENT_ID BRAIN_CF_ACCESS_CLIENT_SECRET)
 # Six variables, two of them secret: the account passwords. The emails are not
 # secret but come from 1Password anyway (see the read block below) — the login
 # items already hold them, so one source per account beats two. The connection
@@ -839,6 +858,14 @@ MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgre
 # database on the same instance, whose fixtures drop every table.
 BRAINDB_OP_REF="${CLAUDE_DOCKER_BRAINDB_OP_REF-op://claude-docker/laslo-brain-test-postgres/dsn}"
 
+# --brain's op-refs: defaulted because every launcher turns --brain on, so a
+# required env var would have to be set on every host. The item is a copy of
+# the Access service token kept in vault brain; the box service account reads
+# claude-docker only and must never be granted brain (it holds Brain's DB
+# password and tunnel token).
+BRAIN_CF_ID_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF-op://claude-docker/brain-cf-access/client-id}"
+BRAIN_CF_SECRET_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_SECRET_OP_REF-op://claude-docker/brain-cf-access/client-secret}"
+
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
 # read from each (username + password) and per-field vars would be four
 # settings to keep consistent for what is really two accounts. Hence the
@@ -942,6 +969,11 @@ op_bin_needed_for=""
   if [ "$WITH_BRAINDB" = "1" ] && [ -z "${BRAIN_TEST_DSN:-}" ] \
      && [ -n "$BRAINDB_OP_REF" ]; then
     op_needed=1; op_needed_for="$op_needed_for --braindb"
+  fi
+  if [ "$WITH_BRAIN" = "1" ] \
+     && { { [ -z "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "$BRAIN_CF_ID_OP_REF" ]; } \
+       || { [ -z "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ] && [ -n "$BRAIN_CF_SECRET_OP_REF" ]; }; }; then
+    op_needed=1; op_needed_for="$op_needed_for --brain"
   fi
   # Each account is paired with its own ref so the preflight still runs when
   # only one of the two needs a read (E2E_PASSWORD pre-set on the host, E2E2's
@@ -1327,6 +1359,27 @@ if [ "$WITH_BRAINDB" = "1" ] && [ -z "${BRAIN_TEST_DSN:-}" ] \
   fi
 fi
 
+# --brain fallback: each half of the Access token read on its own, so a host
+# that pre-sets one var still gets the other from 1Password.
+if [ "$WITH_BRAIN" = "1" ] && command -v op >/dev/null 2>&1; then
+  if [ -z "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "$BRAIN_CF_ID_OP_REF" ]; then
+    brain_cf_id=$(op_read "$BRAIN_CF_ID_OP_REF" || true)
+    if [ -n "$brain_cf_id" ]; then
+      BRAIN_CF_ACCESS_CLIENT_ID="$brain_cf_id"
+      export BRAIN_CF_ACCESS_CLIENT_ID
+      ENV_ARGS+=("-e" "BRAIN_CF_ACCESS_CLIENT_ID")
+    fi
+  fi
+  if [ -z "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ] && [ -n "$BRAIN_CF_SECRET_OP_REF" ]; then
+    brain_cf_secret=$(op_read "$BRAIN_CF_SECRET_OP_REF" || true)
+    if [ -n "$brain_cf_secret" ]; then
+      BRAIN_CF_ACCESS_CLIENT_SECRET="$brain_cf_secret"
+      export BRAIN_CF_ACCESS_CLIENT_SECRET
+      ENV_ARGS+=("-e" "BRAIN_CF_ACCESS_CLIENT_SECRET")
+    fi
+  fi
+fi
+
 # Fill one --rr-e2e account field from 1Password when the host has not already
 # set it. $1 = env var to fill, $2 = op:// item ref, $3 = field name. Four
 # explicit calls rather than a table, because an op:// ref contains ':' and any
@@ -1470,6 +1523,7 @@ DOCKER_FLAGS=()
 [ "$WITH_SONAR" = "1" ]    && DOCKER_FLAGS+=("sonar")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_BRAINDB" = "1" ]  && DOCKER_FLAGS+=("braindb")
+[ "$WITH_BRAIN" = "1" ]    && DOCKER_FLAGS+=("brain")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_HETZNER_INFRA" = "1" ] && DOCKER_FLAGS+=("hetzner-infra")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
@@ -1688,6 +1742,9 @@ cred_require() {
 [ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
 [ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
 [ "$WITH_BRAINDB" = "1" ]    && cred_require --braindb BRAIN_TEST_DSN
+# Both headers are required, so each var is asserted on its own.
+[ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_ID
+[ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_SECRET
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
 [ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
 

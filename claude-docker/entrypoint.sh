@@ -180,6 +180,22 @@ if [ -f "$HOME/.claude/settings.docker.json" ]; then
   cp -f "$HOME/.claude/settings.docker.json" "$HOME/.claude/settings.json"
 fi
 
+# Remote Brain MCP (--brain). User scope lives in ~/.claude.json, which is on
+# the shared claude-code-root volume, so the entry holds only ${VAR}
+# placeholders and Claude Code expands them at connect time (header expansion
+# checked in 2.1.304). It is added once and never removed. A box without
+# --brain still sees the entry, warns about missing variables and gets a 403,
+# but removing the entry would break other boxes running at the same time. The
+# write goes through `claude mcp` so Claude Code's own writer touches the file.
+# A failure here only warns: the box still starts, just without Brain.
+if [ -n "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ] \
+   && ! jq -e '.mcpServers.brain' "$HOME/.claude.json" >/dev/null 2>&1; then
+  # Single quotes on purpose: the placeholders must reach the file unexpanded.
+  brain_mcp='{"type":"http","url":"https://brain.karansjet.dev/mcp","headers":{"CF-Access-Client-Id":"${BRAIN_CF_ACCESS_CLIENT_ID}","CF-Access-Client-Secret":"${BRAIN_CF_ACCESS_CLIENT_SECRET}"}}'
+  claude mcp add-json --scope user brain "$brain_mcp" >/dev/null 2>&1 \
+    || echo "claude-docker: could not add the brain MCP entry; Brain is unavailable in this box" >&2
+fi
+
 # `exec` so signals (Ctrl-C in tmux, container stop) reach claude/tmux
 # directly without an extra shell hop intercepting them.
 exec "$@"
