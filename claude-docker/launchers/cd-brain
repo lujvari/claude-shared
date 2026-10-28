@@ -2,6 +2,7 @@
 # claude-docker launcher: Brain (personal) - the global backlog service, laslo/brain.
 # --braindb forwards BRAIN_TEST_DSN, the laslo_brain_test Postgres DSN, from
 # 1Password. That DSN carries its password — test instance only.
+# --gh so the box pushes its own commits to Brain's private GitHub origin.
 # Cloudflare credentials only for the deploy phase.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
@@ -17,4 +18,4 @@ cd_workspace "laslo/brain"
 ( cd "$ws" && op run --env-file=.env.test -- \
     docker compose -f compose.test.yml up -d --wait ) >&2
 
-exec "$CD_RUN" --claude-auth --braindb "$ws" "$@"
+exec "$CD_RUN" --claude-auth --gh --braindb "$ws" "$@"
