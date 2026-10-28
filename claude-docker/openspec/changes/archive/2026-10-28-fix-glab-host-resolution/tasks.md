@@ -21,4 +21,4 @@
 
 ## 5. On archive
 
-- [ ] 5.1 Fold `specs/external-cli-tools/spec.md` (this change) into the main spec. This replaces the stale `--glab` config-mount bullet and the "--glab grants read-only token access" scenario.
+- [x] 5.1 Fold `specs/external-cli-tools/spec.md` (this change) into the main spec. This replaces the stale `--glab` config-mount bullet and the "--glab grants read-only token access" scenario.
