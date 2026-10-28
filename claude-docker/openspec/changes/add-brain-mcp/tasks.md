@@ -35,12 +35,15 @@
 
 ## 4. Live proof (after 0.x)
 
-- [ ] 4.1 Relaunch `cd-brain`, then `claude mcp list` shows `brain` connected
-- [ ] 4.2 A `list` tools call to `brain` returns. The DB is empty, so an
+- [x] 4.0 Rebuild the image (`docker build -t claude-code:local <claude-docker>`).
+      entrypoint.sh is baked in at build, and run.sh never rebuilds, so a stale
+      image forwards the vars but never seeds the entry.
+- [x] 4.1 Relaunch `cd-brain`, then `claude mcp list` shows `brain` connected
+- [x] 4.2 A `list` tools call to `brain` returns. The DB is empty, so an
       empty result is fine.
 - [x] 4.3 `curl -s -o /dev/null -w '%{http_code}' https://brain.karansjet.dev/mcp`
       returns 403
 - [ ] 4.4 Fail closed: `CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF=op://claude-docker/nope/x`
       with `--brain` exits non-zero before `docker run`
-- [ ] 4.5 Post to the host: the op-ref item and fields, the env var names, and
+- [x] 4.5 Post to the host: the op-ref item and fields, the env var names, and
       which launch shows Brain. No values.
