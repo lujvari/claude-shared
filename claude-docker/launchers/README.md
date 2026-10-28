@@ -58,7 +58,10 @@ Two rules:
   names *which* credentials to forward, never their values.
 
 Work that spans several trees calls `cd_workspace` once per tree and passes
-them all; the first becomes the box's working directory (see `cd-asr`).
+them all; the first becomes the box's working directory (see `cd-asr`,
+`cd-inat`). A tree passed twice — a launcher default plus a `+PATH` naming it
+again — is mounted once; two *different* trees with the same basename still
+fail run.sh's collision check.
 
 The dev root is derived in `_lib.sh` from the checkout's own location, four
 levels above this directory — nothing to configure when the clone moves.

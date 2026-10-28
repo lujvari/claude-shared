@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # claude-docker launcher: SBP AI (non-CIS) — inat.
-# Lives on sbp.gitlab, hence --glab.
+#
+# Multi-mount: inat (the repo, and the box's working dir as the first mount)
+# plus sbp/ai/kits, read-write. kits is inat's main kit source, and the two
+# change together (registry format, delivery behaviour, testing against real
+# kits), so mounting it by default saves a `+sbp/ai/kits` on every launch.
+# Passing `+sbp/ai/kits` anyway is harmless: run.sh collapses a tree given
+# twice into one mount.
+#
+# Both live on sbp.gitlab, hence --glab.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
-cd_workspace "sbp/ai/inat"
-exec "$CD_RUN" --claude-auth --glab "$ws" "$@"
+cd_workspace "sbp/ai/inat"; inat=$ws
+cd_workspace "sbp/ai/kits"; kits=$ws
+exec "$CD_RUN" --claude-auth --glab "$inat" "$kits" "$@"

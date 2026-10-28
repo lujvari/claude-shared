@@ -419,13 +419,21 @@ for ws in "${WORKSPACES[@]}"; do
   esac
   n=${#SEEN_NAMES[@]}
   i=0
+  dup=0
   while [ "$i" -lt "$n" ]; do
+    # The same tree given twice (a launcher default plus a +PATH naming it
+    # again) collapses to one mount rather than tripping the collision check.
+    if [ "${SEEN_PATHS[$i]}" = "$abs" ]; then
+      dup=1
+      break
+    fi
     if [ "${SEEN_NAMES[$i]}" = "$name" ]; then
       echo "claude-docker: workspace basename collision — '$abs' and '${SEEN_PATHS[$i]}' both map to /workspaces/$name" >&2
       exit 1
     fi
     i=$((i + 1))
   done
+  [ "$dup" = 1 ] && continue
   SEEN_NAMES+=("$name")
   SEEN_PATHS+=("$abs")
   MOUNT_ARGS+=("-v" "$abs:/workspaces/$name$ws_suffix")
