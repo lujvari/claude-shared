@@ -37,4 +37,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# sbp.gitlab only: glab's default host and the only host the git credential
+# helper offers the token to. run.sh derives neither (no glab-config parse).
+export GITLAB_HOST=sbp.gitlab.schubergphilis.com
+export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
 exec "$CD_RUN" --claude-auth --glab "$kb" "$raw" "$deck" "${extra[@]}" "${args[@]}"

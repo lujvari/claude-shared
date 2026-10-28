@@ -99,6 +99,11 @@ Wrapper flags:
                       glab-cli config is mounted and no on-disk login is read
                       — GitLab auth is token-only, so set the op-ref (or an
                       explicit GITLAB_TOKEN) or --glab has no GitLab auth.
+                      Hosts: the git credential helper covers only
+                      CLAUDE_DOCKER_GITLAB_HOSTS (comma list, default
+                      gitlab.com), and GITLAB_HOST is forwarded as glab's
+                      default host. Neither is read from the glab config;
+                      the SBP launchers set both to sbp.gitlab.
   --tfe               Opt in to Terraform Cloud (app.terraform.io): mount
                       ~/.terraform.d/credentials.tfrc.json (:ro) when
                       present and forward TF_TOKEN_app_terraform_io;
@@ -602,7 +607,7 @@ fi
 
 ENV_VARS=()
 [ "$WITH_GH" = "1" ]   && ENV_VARS+=(GH_TOKEN GITHUB_TOKEN)
-[ "$WITH_GLAB" = "1" ] && ENV_VARS+=(GITLAB_TOKEN)
+[ "$WITH_GLAB" = "1" ] && ENV_VARS+=(GITLAB_TOKEN GITLAB_HOST)
 # --aws forwards NO ambient AWS_* on purpose (see the static-credential block
 # below): an ambient static key outranks AWS_PROFILE and a forwarded
 # AWS_REGION overrides every profile's region, so both would sabotage explicit
@@ -668,7 +673,7 @@ if [ "${#ENV_VARS[@]}" -gt 0 ]; then
     [ -n "${!v:-}" ] && ENV_ARGS+=("-e" "$v")
   done
 fi
-# Enumerate authenticated hosts from gh/glab config files so the container
+# Enumerate authenticated GitHub hosts from the gh config file so the container
 # entrypoint can install a per-host git credential helper for each.
 # Parsing is best-effort: on missing/unreadable/unparseable config, output
 # is empty and the entrypoint falls back to the canonical public host. The
@@ -685,35 +690,21 @@ _extract_gh_hosts() {
   awk '/^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9-]+:[[:space:]]*$/ { sub(":[[:space:]]*$", ""); print }' "$cfg" \
     | paste -sd, -
 }
-# glab: ~/.config/glab-cli/config.yml — hosts are nested under a `hosts:`
-# key. glab 1.97+ uses 4-space indent (1.92 used 2-space). Per-host
-# config keys live one level deeper (subfolder:, proxy:, api_protocol:
-# etc.) and also end with a colon. Match any indent depth and require a
-# dot in the key name to disambiguate from those config keys (none of
-# which contain dots).
-_extract_glab_hosts() {
-  local cfg="$HOME/.config/glab-cli/config.yml"
-  [ -r "$cfg" ] || return 0
-  awk '
-    /^hosts:[[:space:]]*$/ { in_hosts=1; next }
-    in_hosts && /^[^[:space:]]/ { in_hosts=0 }
-    in_hosts && /^[[:space:]]+[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9-]+:[[:space:]]*$/ {
-      sub("^[[:space:]]+", ""); sub(":[[:space:]]*$", ""); print
-    }
-  ' "$cfg" | paste -sd, -
-}
 
 # Compute host lists once per flag — reused for both the token fallback
-# below and CLAUDE_DOCKER_*_HOSTS forwarding to the entrypoint. Honor a
-# pre-set CLAUDE_DOCKER_*_HOSTS env var as an explicit override / escape
-# hatch when config parsing doesn't fit the user's setup.
+# below and CLAUDE_DOCKER_*_HOSTS forwarding to the entrypoint. GitHub honors
+# a pre-set CLAUDE_DOCKER_GITHUB_HOSTS as an override of the gh-config parse.
+# GitLab takes its host list ONLY from CLAUDE_DOCKER_GITLAB_HOSTS (the SBP
+# launchers set it); the host glab config is deliberately not parsed, because
+# copying every host from it offered the SBP token to gitlab.com (401). Unset,
+# the entrypoint defaults to gitlab.com.
 gh_hosts=""
 glab_hosts=""
 if [ "$WITH_GH" = "1" ]; then
   gh_hosts="${CLAUDE_DOCKER_GITHUB_HOSTS:-$(_extract_gh_hosts || true)}"
 fi
 if [ "$WITH_GLAB" = "1" ]; then
-  glab_hosts="${CLAUDE_DOCKER_GITLAB_HOSTS:-$(_extract_glab_hosts || true)}"
+  glab_hosts="${CLAUDE_DOCKER_GITLAB_HOSTS:-}"
 fi
 
 # --gh CLI fallback: if neither GH_TOKEN nor GITHUB_TOKEN was forwarded, walk
@@ -1425,10 +1416,10 @@ if [ "$WITH_HETZNER_INFRA" = "1" ] && [ -z "${HCLOUD_TOKEN:-}" ] \
   fi
 fi
 
-# Forward the enumerated host lists into the container so the entrypoint
-# can install a per-host git credential helper for each. When
-# empty (no config / unparseable), the entrypoint defaults to the
-# canonical public host.
+# Forward the host lists into the container so the entrypoint can install a
+# per-host git credential helper for each. When empty (GitHub: no config /
+# unparseable; GitLab: CLAUDE_DOCKER_GITLAB_HOSTS unset), the entrypoint
+# defaults to the canonical public host.
 [ -n "$gh_hosts" ]   && ENV_ARGS+=("-e" "CLAUDE_DOCKER_GITHUB_HOSTS=$gh_hosts")
 [ -n "$glab_hosts" ] && ENV_ARGS+=("-e" "CLAUDE_DOCKER_GITLAB_HOSTS=$glab_hosts")
 
