@@ -202,8 +202,8 @@ Wrapper flags:
                       CLAUDE_DOCKER_BRAIN=1 does the same; every cd-* launcher
                       exports it. Defaulted refs, overridable via
                       CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF / _SECRET_OP_REF:
-                        op://claude-docker/brain-cf-access/client-id
-                        op://claude-docker/brain-cf-access/client-secret
+                        op://claude-docker/brain-cf-access/username
+                        op://claude-docker/brain-cf-access/credential
                       Set either to "" to switch its 1Password path off.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
@@ -863,8 +863,8 @@ BRAINDB_OP_REF="${CLAUDE_DOCKER_BRAINDB_OP_REF-op://claude-docker/laslo-brain-te
 # the Access service token kept in vault brain; the box service account reads
 # claude-docker only and must never be granted brain (it holds Brain's DB
 # password and tunnel token).
-BRAIN_CF_ID_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF-op://claude-docker/brain-cf-access/client-id}"
-BRAIN_CF_SECRET_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_SECRET_OP_REF-op://claude-docker/brain-cf-access/client-secret}"
+BRAIN_CF_ID_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF-op://claude-docker/brain-cf-access/username}"
+BRAIN_CF_SECRET_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_SECRET_OP_REF-op://claude-docker/brain-cf-access/credential}"
 
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
 # read from each (username + password) and per-field vars would be four

@@ -1,11 +1,10 @@
 ## 0. Owner (blocks 4.x)
 
-- [ ] 0.1 The owner copied the token into vault `claude-docker` (bus
-      20261028T122301Z-346ef6). The item name and field labels still have to
-      be checked against the `run.sh` defaults (`brain-cf-access`,
-      `client-id`, `client-secret`). If they differ, fix the defaults.
-- [ ] 0.2 From the box, check the labels with jq on labels only:
-      `op item get brain-cf-access --vault claude-docker --format json | jq '[.fields[].label]'`
+- [x] 0.1 Item `brain-cf-access` in vault `claude-docker` (renamed by the
+      owner from its copied title `claude-docker`). Fields: `username` is the
+      Client ID (39 chars, ends `.access`), `credential` is the Client Secret.
+      The `run.sh` defaults point at those labels.
+- [x] 0.2 Labels checked from WSL, printing labels, lengths and suffix only
 
 ## 1. run.sh
 

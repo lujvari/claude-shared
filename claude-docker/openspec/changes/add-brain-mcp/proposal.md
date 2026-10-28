@@ -13,7 +13,7 @@ which follows the repo's other credentials.
   `BRAIN_CF_ACCESS_CLIENT_SECRET` and forwards them into the container. A host
   value wins. Otherwise `run.sh` reads `CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF` and
   `CLAUDE_DOCKER_BRAIN_CF_SECRET_OP_REF`, which default to
-  `op://claude-docker/brain-cf-access/client-id` and `.../client-secret`
+  `op://claude-docker/brain-cf-access/username` and `.../credential`
   (`${VAR-default}` form, so an empty value switches 1Password off).
 - **On for every launcher.** `launchers/_lib.sh` exports
   `CLAUDE_DOCKER_BRAIN=1`, the same way it exports the bus dir, and `run.sh`
