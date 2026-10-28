@@ -1,9 +1,9 @@
 ## 0. Owner (blocks 4.x)
 
-- [ ] 0.1 Copy the Brain Access service token from vault `brain` (item
-      `claude-docker`) to vault `claude-docker` as item `brain-cf-access`,
-      fields `client-id` and `client-secret`. If you pick other names, the
-      defaults in 1.2 change to match.
+- [ ] 0.1 The owner copied the token into vault `claude-docker` (bus
+      20261028T122301Z-346ef6). The item name and field labels still have to
+      be checked against the `run.sh` defaults (`brain-cf-access`,
+      `client-id`, `client-secret`). If they differ, fix the defaults.
 - [ ] 0.2 From the box, check the labels with jq on labels only:
       `op item get brain-cf-access --vault claude-docker --format json | jq '[.fields[].label]'`
 
