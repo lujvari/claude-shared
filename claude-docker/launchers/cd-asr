@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # claude-docker launcher: a.s.r. client work — the KB and what it draws on.
 #
-# Multi-mount, because asr work spans three trees: asr-kb (the repo, and the
+# Multi-mount, because asr work spans four trees: asr-kb (the repo, and the
 # box's working dir as the first mount), _outside-kb (transcripts and staging
-# kept out of the KB) and sbp/deck-standard (create-deck writes deck source
-# there, so it is mounted read-write).
+# kept out of the KB), sbp/deck-standard (create-deck writes deck source
+# there, so it is mounted read-write) and asr-switch, the frozen Switch
+# snapshot.
 #
 # --glab so the box pushes branches and opens MRs itself; asr-kb main is
 # protected, so that token cannot land anything without review.
 #
-# --switch (launcher flag, consumed here) also mounts asr-switch, the frozen
-# Switch snapshot. Opt-in rather than default: it is unpacked customer code,
-# an injection surface the box only needs next to a GitLab token when the
-# session is actually analysing Switch. run.sh's --ro covers every mount, so
-# it cannot be made read-only on its own. phileasfogg is never mounted here;
-# cd-asr-ref reads all of clients/asr with no credentials.
+# asr-switch is always mounted, by the owner's choice: Switch analysis comes
+# up in most asr sessions. It was opt-in (--switch) before, because it is
+# unpacked customer code, an injection surface sitting next to the GitLab
+# token. That exposure is accepted, not removed. run.sh's --ro covers every
+# mount, so it cannot be made read-only on its own. phileasfogg is never
+# mounted here; cd-asr-ref reads all of clients/asr with no credentials.
 #
 # CIS platform work for the ASR tenant is cd-cis (AWS_PROFILE picks the tenant).
 #
@@ -25,20 +26,10 @@ set -euo pipefail
 cd_workspace "clients/asr/asr-kb";      kb=$ws
 cd_workspace "clients/asr/_outside-kb"; raw=$ws
 cd_workspace "sbp/deck-standard";       deck=$ws
-
-# Pull launcher-only flags out before `--`; everything else goes to run.sh.
-extra=() args=()
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --switch) cd_workspace "clients/asr/asr-switch"; extra+=("$ws") ;;
-    --)       args+=("$@"); break ;;
-    *)        args+=("$1") ;;
-  esac
-  shift
-done
+cd_workspace "clients/asr/asr-switch";  switch=$ws
 
 # sbp.gitlab only: glab's default host and the only host the git credential
 # helper offers the token to. run.sh derives neither (no glab-config parse).
 export GITLAB_HOST=sbp.gitlab.schubergphilis.com
 export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
-exec "$CD_RUN" --claude-auth --glab "$kb" "$raw" "$deck" "${extra[@]}" "${args[@]}"
+exec "$CD_RUN" --claude-auth --glab "$kb" "$raw" "$deck" "$switch" "$@"
