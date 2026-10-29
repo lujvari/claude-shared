@@ -76,6 +76,13 @@ ARG DOTNET_SDK_8_SHA512_AARCH64=84a4d017d74d7aa842e981679d1b044e6be1f35b9b2b2140
 ARG DOTNET_SDK_9_VERSION=9.0.318
 ARG DOTNET_SDK_9_SHA512_X86_64=e8685293a3512178e0de1bb3c1663e31fdf9d761af705094bf833cc1ff6b9a18c543aa4141f0216503c98039c719585a6d32905b0bbb3279e93b7e7616e047c3
 ARG DOTNET_SDK_9_SHA512_AARCH64=f9c957867bddea8f82ec0459432ce7ddff8fafc846537b8003eb9f239d9c2e38586031a15954e74691c5a8cf5b3ab125d99bca85c74ca45dc8745071ca81e7ff
+# Go toolchain, a base-image exception like Flutter and .NET (openspec change
+# add-go-toolchain): Go projects' pre-commit hooks run go vet / staticcheck /
+# go test from Claude's Bash tool. Bump + get the hashes with:
+#   curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0] | .version, (.files[]|select(.os=="linux" and .kind=="archive" and (.arch=="amd64" or .arch=="arm64"))|"\(.arch) \(.sha256)")'
+ARG GO_VERSION=1.27.3
+ARG GO_SHA256_X86_64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+ARG GO_SHA256_AARCH64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 # ICU runtime for .NET globalization. Versioned package name tracks the base
 # image (26.04/resolute ships libicu78); bump alongside the FROM digest — a
 # wrong name fails the build loudly, which is the intent. `libicu-dev` would
@@ -481,6 +488,26 @@ ENV DOTNET_ROOT=/opt/dotnet \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
     PATH=/opt/dotnet:/home/claude/.dotnet/tools:${PATH}
+
+# Go toolchain at /usr/local/go.
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  GOARCH=amd64; SHA="${GO_SHA256_X86_64}" ;; \
+      aarch64) GOARCH=arm64; SHA="${GO_SHA256_AARCH64}" ;; \
+      *) echo "Unsupported arch for Go: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" -o /tmp/go.tar.gz; \
+    echo "${SHA}  /tmp/go.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/go.tar.gz -C /usr/local --no-same-owner; \
+    rm /tmp/go.tar.gz
+
+# On PATH through ENV, not ~/.bashrc: Claude's Bash tool doesn't take PATH from
+# the rc file, so a .bashrc-only Go was invisible to agent commits and their
+# pre-commit hooks. GOPATH sits in the claude-code-root volume, so `go install`ed
+# tools (staticcheck) persist and stay on PATH. No GOROOT: `go` derives it, and
+# a stale GOROOT left in a volume's .bashrc would point it at the wrong tree.
+ENV GOPATH=/home/claude/go \
+    PATH=/usr/local/go/bin:/home/claude/go/bin:${PATH}
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required

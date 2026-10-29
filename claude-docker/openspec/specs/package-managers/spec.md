@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide `uv`/`uvx` (Python) and `pnpm`/`pnpx` (Node) inside the container for general-purpose user-tier work, with the same pin-and-verify hardening as other binary tools where the ecosystem supports it. Project-specific language runtimes (rust, go, ruby, etc.) are deliberately excluded — they belong in child images via the `CLAUDE_DOCKER_IMAGE` extension pattern.
+Provide `uv`/`uvx` (Python) and `pnpm`/`pnpx` (Node) inside the container for general-purpose user-tier work, with the same pin-and-verify hardening as other binary tools where the ecosystem supports it. Project-specific language runtimes (rust, ruby, etc.) are deliberately excluded — they belong in child images via the `CLAUDE_DOCKER_IMAGE` extension pattern. Go, Flutter and .NET are the exceptions, baked into the base image by owner decision (Go: change add-go-toolchain).
 
 ## Requirements
 
