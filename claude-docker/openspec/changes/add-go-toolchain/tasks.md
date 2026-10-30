@@ -18,7 +18,7 @@
 
 ## 4. Verify on the rebuilt image (host)
 
-- [ ] 4.1 Host rebuild of `claude-code:local`
-- [ ] 4.2 In a new box, from the Bash tool: `go version` prints 1.27.3, `go env GOROOT` prints `/usr/local/go`, `staticcheck -version` resolves
+- [x] 4.1 Host rebuild of `claude-code:local`
+- [x] 4.2 In a new box, from the Bash tool: `go version` prints 1.27.3, `go env GOROOT` prints `/usr/local/go`, `staticcheck -version` resolves
 - [ ] 4.3 In cd-inat: an agent commit passes the pre-commit hook (go vet / staticcheck / go test)
-- [ ] 4.4 Reply to bus msg 2bb134 with the commits and "rebuild needed", then `done` it
+- [x] 4.4 Reply to bus msg 2bb134 with the commits and "rebuild needed", then `done` it
