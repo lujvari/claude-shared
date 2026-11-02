@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# claude-docker launcher: family-board (personal; Cloudflare Workers + D1).
+# --gh so the box pushes to github.com/lujvari. --cloudflare is deliberately
+# NOT forwarded: credentialed wrangler (login, d1 create, migrations --remote,
+# secret put, deploy) runs on the owner's WSL shell, never in the box.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "laslo/family-board"
+exec "$CD_RUN" --claude-auth --gh "$ws" "$@"
