@@ -26,7 +26,7 @@
 - [x] 4.2 `bash -n` and `shellcheck -s bash -x` (0.11.0, from shellcheck-py in a scratch venv) are clean on `_lib.sh`, `cd-brain` and `cd-mep`. Without `-s bash`, `_lib.sh` raises SC2148 (no shebang), as it already did before this change.
 - [x] 4.3 Live on WSL, 2026-11-05: a single `cd-brain` exit stops the DB. With two `cd-brain` boxes (cd-mep shares the helper), the first exit printed `left running: another box holds it` and the second `stopped (last box out)`.
 - [x] 4.4 Live on WSL, 2026-11-05: closing a `cd-brain` terminal window stops the DB (`Exited (0)`), and `brain-test_pgdata` survives.
-- [ ] 4.5 Live on WSL: after a closed window, check whether the box's own container is left in `docker ps` (an orphan the lock no longer counts).
+- [x] 4.5 Live on WSL, 2026-11-05: a closed window leaves no box container behind. The only `/workspaces/brain` box running afterwards was a fresh launch, and its `up` restarted the DB.
 
 ## 5. Validation
 
