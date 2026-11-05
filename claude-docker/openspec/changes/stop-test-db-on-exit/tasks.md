@@ -24,10 +24,8 @@
   (e) without `flock` on PATH there is a warning and no stop
   Also covered: a launch that starts during a slow stop waits for it, then brings the DB back up. The harness passes 7/7. With the exclusive-lock check broken, 3 tests fail. The harness is a session scratch script and is not committed.
 - [ ] 4.2 `bash -n` and `shellcheck` on `_lib.sh`, `cd-brain` and `cd-mep`. `bash -n` passes. `shellcheck` is not installed in the box, so run it on WSL.
-- [ ] 4.3 Live on WSL (the user, about 5 min):
-  - `cd-brain`, exit, then `docker ps -a --filter name=brain-test-postgres` shows Exited and `docker volume ls` still shows `brain-test_pgdata`
-  - two `cd-mep` terminals: exit one and the DB stays up, exit the other and it stops
-  - close a `cd-brain` terminal window, then check the DB is stopped and whether an orphaned box container is left in `docker ps`
+- [x] 4.3 Live on WSL, 2026-11-05: a single `cd-brain` exit stops the DB. With two `cd-brain` boxes (cd-mep shares the helper), the first exit printed `left running: another box holds it` and the second `stopped (last box out)`.
+- [ ] 4.4 Live on WSL: close a `cd-brain` terminal window, then check the DB is stopped, `brain-test_pgdata` still exists, and whether an orphaned box container is left in `docker ps`.
 
 ## 5. Validation
 
