@@ -57,6 +57,15 @@ Two rules:
   above `CD_ENV_FILE` in `run.sh` for why that is not a shell rc. A launcher
   names *which* credentials to forward, never their values.
 
+A launcher that brings up its project's test database (`cd-brain`, `cd-mep`)
+calls `cd_test_db_hold <container>` before the `up`, and ends with
+`cd_test_db_run <container> <flags> "$ws" "$@"` in place of the `exec`. The
+last box of that project to exit then stops the database: `docker stop`, not
+`down`, so the data survives and the next launch restarts it. A second box of
+the same project keeps it running. The test DBs are therefore down between
+sessions, so a host-side test run brings its own up. The mechanism (a shared
+`flock`) is documented in `_lib.sh`.
+
 Work that spans several trees calls `cd_workspace` once per tree and passes
 them all; the first becomes the box's working directory (see `cd-asr`,
 `cd-inat`). A tree passed twice — a launcher default plus a `+PATH` naming it

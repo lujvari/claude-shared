@@ -11,8 +11,10 @@ cd_workspace "myEntryPoint"
 # myentrypoint-test-postgres: MEP's own disposable test database, defined in
 # myEntryPoint/compose.test.yml (loopback 47304; boxes reach it at
 # host.docker.internal:47304, the DSN --mepdb forwards). Brought up before
-# every launch; `up --wait` is a no-op when it is already healthy. Always
-# through `op run`: compose.test.env holds the op:// ref for the role password.
+# every launch; `up --wait` is a no-op when it is already healthy. Stopped (not
+# removed) when the last cd-mep box exits; see cd_test_db_hold/cd_test_db_run
+# in _lib.sh. Always through `op run`: compose.test.env holds the op:// ref
+# for the role password.
 # Unlike cd-brain, a failure only warns and the launch goes ahead, so the box
 # stays usable for work that needs no database; test-db.sh fails loudly in
 # there anyway.
@@ -22,16 +24,17 @@ cd_workspace "myEntryPoint"
 # recreate once if it's missing, and warn only if that doesn't fix it.
 mep_test_db() {
   ( cd "$ws" && op run --env-file=compose.test.env -- \
-      docker compose -f compose.test.yml up -d --wait "$@" ) 2>&1
+      docker compose -f compose.test.yml up -d --wait "$@" ) 2>&1 9>&-
 }
 mep_test_db_published() {
   [ -n "$(docker port myentrypoint-test-postgres 5432/tcp 2>/dev/null)" ]
 }
 mep_test_db_warn() { printf 'MEP test database unavailable: %s\n' "$1" >&2; }
+cd_test_db_hold myentrypoint-test-postgres
 if ! out=$(mep_test_db) || { ! mep_test_db_published && ! out=$(mep_test_db --force-recreate); }; then
   mep_test_db_warn "$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -n1)"
 elif ! mep_test_db_published; then
   mep_test_db_warn "127.0.0.1:47304 not published (port in use?)"
 fi
 
-exec "$CD_RUN" --claude-auth --gh --mepdb "$ws" "$@"
+cd_test_db_run myentrypoint-test-postgres --claude-auth --gh --mepdb "$ws" "$@"

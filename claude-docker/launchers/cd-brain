@@ -12,20 +12,23 @@ cd_workspace "laslo/brain"
 # laslo/brain/compose.test.yml (loopback 47401; boxes reach it at
 # host.docker.internal:47401). Brought up before every launch so --braindb's
 # DSN always has something to answer it; `up --wait` is a no-op when it is
-# already healthy. Always through `op run`: .env.test holds op:// refs for the
-# init passwords, and leaving them unresolved would change the service config
-# and make compose recreate the container. Any failure aborts the launch.
+# already healthy. Stopped (not removed) when the last cd-brain box exits;
+# see cd_test_db_hold/cd_test_db_run in _lib.sh. Always through `op run`:
+# .env.test holds op:// refs for the init passwords, and leaving them
+# unresolved would change the service config and make compose recreate the
+# container. Any failure aborts the launch.
 # Docker Desktop doesn't fail `up` when 47401 is taken: the container comes up
 # healthy with the port silently unpublished, and stays that way after the
 # port frees (later `up --wait` calls are no-ops). So check the publication,
 # recreate once if it's missing, and abort if that doesn't fix it.
 brain_test_db() {
   ( cd "$ws" && op run --env-file=.env.test -- \
-      docker compose -f compose.test.yml up -d --wait "$@" ) >&2
+      docker compose -f compose.test.yml up -d --wait "$@" ) >&2 9>&-
 }
 brain_test_db_published() {
   [ -n "$(docker port brain-test-postgres 5432/tcp 2>/dev/null)" ]
 }
+cd_test_db_hold brain-test-postgres
 brain_test_db
 if ! brain_test_db_published; then
   brain_test_db --force-recreate
@@ -36,4 +39,4 @@ if ! brain_test_db_published; then
   fi
 fi
 
-exec "$CD_RUN" --claude-auth --gh --braindb "$ws" "$@"
+cd_test_db_run brain-test-postgres --claude-auth --gh --braindb "$ws" "$@"
