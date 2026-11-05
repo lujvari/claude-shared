@@ -53,8 +53,9 @@ Out of scope (deliberately):
   unaffected.
 - **A box orphaned by its client.** If the `docker` CLI dies but the `--rm`
   container keeps running, the lock is gone and the DB can be stopped under
-  that container. Task 4.3 checks whether this happens at all. If it does,
-  the container leak is its own problem.
+  that container. Task 4.5 found that closing a terminal window leaves no
+  such container behind. If one ever appears, the container leak is its own
+  problem.
 - **A DB started by hand before the first launch.** The launchers own the
   test DB's lifecycle, so it is stopped when the last box exits.
 - **Unifying the two bring-up blocks.** They differ on purpose (cd-brain
