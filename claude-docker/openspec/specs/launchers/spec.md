@@ -1,7 +1,7 @@
 # launchers Specification
 
 ## Purpose
-TBD - created by archiving change stop-test-db-on-exit. Update Purpose after archive.
+Behaviour of the per-project `cd-*` launchers in `launchers/` beyond the `run.sh` flags they pass, starting with the lifecycle of a project's test database.
 ## Requirements
 ### Requirement: Test database stops when the last box of its project exits
 
