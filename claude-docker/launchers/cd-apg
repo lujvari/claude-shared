@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# claude-docker launcher: APG client work.
+#
+# Mounts all of clients/apg, a container rather than a repo: apg-kb (the KB,
+# sbp.gitlab Apg/kb), _outside-kb and the client's OPEN.md, so the box sees
+# the whole layout from one tree. Unlike cd-asr, which mounts asr-kb first,
+# the working dir is the container, not the repo. Split it into per-repo
+# mounts (as cd-asr does) once APG work spans more repos.
+#
+# --glab so the box pushes branches and opens MRs itself; apg-kb's push rules
+# are in its own CLAUDE.md.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "clients/apg"
+
+# sbp.gitlab only: glab's default host and the only host the git credential
+# helper offers the token to. run.sh derives neither (no glab-config parse).
+export GITLAB_HOST=sbp.gitlab.schubergphilis.com
+export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
+exec "$CD_RUN" --claude-auth --glab "$ws" "$@"

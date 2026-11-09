@@ -70,7 +70,7 @@ All credential bind-mounts SHALL be read-only so a compromised container cannot 
 
 #### Scenario: SBP launchers pin the GitLab host
 
-- **WHEN** `cd-cis`, `cd-inat`, `cd-asr` or `cd-ta` starts a box
+- **WHEN** `cd-cis`, `cd-inat`, `cd-asr`, `cd-ta` or `cd-apg` starts a box
 - **THEN** the launcher has exported `GITLAB_HOST` and `CLAUDE_DOCKER_GITLAB_HOSTS`, both set to `sbp.gitlab.schubergphilis.com`, before `exec`ing `run.sh`
 
 #### Scenario: --gh forwards host env token
