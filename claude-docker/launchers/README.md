@@ -36,6 +36,23 @@ terminal and run a different launcher. Concurrent containers are supported
 (give two sessions on the same repo separate worktrees — see the main README),
 so you never trade a running session to change flags.
 
+## After a reboot
+
+```sh
+cd-up                    # every box, one Windows Terminal tab each, resumed
+cd-up rr cis             # only those
+```
+
+Run it from WSL inside Windows Terminal. It waits for Docker (up to 180 s),
+checks `op whoami` once and stops cleanly if 1Password isn't signed in, then
+opens one tab per box ~3 s apart so the boxes' `op read`s don't time out
+together. A tab whose box fails stays open at a shell: retry with the up-arrow.
+
+The fleet is the `boxes=(...)` line at the top of `cd-up`; add a new launcher
+there too. `--continue` resumes the newest session in the box's working
+directory, so a second box from the same launcher, or a `claude -p` run there
+since, can make a tab resume the wrong conversation.
+
 ## Adding one
 
 ```sh

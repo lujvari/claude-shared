@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# claude-docker fleet relaunch: after a reboot, reopen every box in its own
+# Windows Terminal tab, resuming its last conversation. Run from WSL inside
+# Windows Terminal; tabs open in the current window.
+#
+#   cd-up            every box in the list below
+#   cd-up rr cis     only those
+#
+# Docker and 1Password are checked once, up front: with either missing, every
+# box would abort in its own tab instead.
+#
+# One wt.exe call per box, ~3 s apart. run.sh gives each `op read` 5 s and
+# aborts the launch on any failed read; a dozen boxes reading at once at boot
+# is how that timeout gets hit.
+#
+# The tab command is `bash -lic`: -l because ~/bin reaches PATH through
+# ~/.profile, -i because the 1Password token pointer is read in ~/.bashrc.
+# It contains no `;`, which wt.exe takes as its own subcommand separator even
+# inside an argument. `|| true && exec bash` leaves a shell in the tab after
+# the box exits or fails, so a failed launch stays visible for a retry.
+#
+# Known limit: --continue resumes the newest session in the box's working
+# directory, so two boxes from one launcher, or a headless `claude -p` run in
+# that workspace since, can resume the wrong conversation.
+set -euo pipefail
+
+# The fleet. Each name is a cd-<name> launcher on PATH.
+boxes=(apg asr asr-ref board brain cis ct dev inat mep rr ta tools ws13)
+
+docker_wait=${CD_UP_DOCKER_WAIT:-180}
+stagger=${CD_UP_STAGGER:-3}
+
+case "${1:-}" in
+  -h|--help)
+    echo "usage: cd-up [box...]   (default: ${boxes[*]})"
+    exit 0
+    ;;
+esac
+
+if [ $# -gt 0 ]; then
+  unknown=()
+  for b in "$@"; do
+    case " ${boxes[*]} " in
+      *" $b "*) ;;
+      *) unknown+=("$b") ;;
+    esac
+  done
+  if [ ${#unknown[@]} -gt 0 ]; then
+    echo "cd-up: unknown box: ${unknown[*]} (known: ${boxes[*]})" >&2
+    exit 2
+  fi
+  boxes=("$@")
+fi
+
+waited=0
+until docker info >/dev/null 2>&1; do
+  if [ "$waited" -ge "$docker_wait" ]; then
+    echo "cd-up: Docker did not come up within ${docker_wait}s; is Docker Desktop running?" >&2
+    exit 1
+  fi
+  sleep 2
+  waited=$((waited + 2))
+done
+
+if ! op whoami >/dev/null 2>&1; then
+  echo "cd-up: 1Password is not authenticated (op whoami failed); no tabs opened." >&2
+  exit 1
+fi
+
+first=1
+for b in "${boxes[@]}"; do
+  [ "$first" = 1 ] || sleep "$stagger"
+  first=0
+  wt.exe -w 0 new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b -- --continue || true && exec bash"
+  echo "cd-up: opened cd-$b"
+done
