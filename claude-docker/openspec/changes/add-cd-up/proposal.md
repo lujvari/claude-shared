@@ -30,11 +30,17 @@ tab-by-tab relaunch.
     `cd-X -- --continue || true && exec bash`, which chains without one.
     That removes the question rather than relying on the quoting to survive.
 - **Unknown name = error before any tab opens**, listing the valid names.
+- **Opt-in `--yolo`.** `cd-up --yolo [box...]` passes `--yolo` to every box it
+  opens (`cd-X --yolo -- --continue || true && exec bash`, still no `;`). A
+  plain `cd-up` never adds it: a `--yolo` box can use every credential its
+  launcher mounts without a permission prompt, so that stays a per-run choice.
+  Flags come before box names; an unknown flag exits 2 before anything runs.
 
 Out of scope (deliberately; a critic review dropped these as overcomplicated):
 
 - A box registry, a respawn loop, a "stale box" indicator.
 - Docker Desktop autostart (done host-side).
+- `--yolo` as the default, or baked into any launcher.
 - Raising `CLAUDE_DOCKER_OP_TIMEOUT` for these launches; the stagger is the fix.
 
 Known limit, documented rather than fixed: `--continue` resumes the newest

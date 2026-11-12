@@ -5,6 +5,10 @@
 #
 #   cd-up            every box in the list below
 #   cd-up rr cis     only those
+#   cd-up --yolo     pass --yolo to every box opened
+#
+# --yolo is opt-in, never the default: a --yolo box can use every credential
+# its launcher mounts without a permission prompt.
 #
 # Docker and 1Password are checked once, up front: with either missing, every
 # box would abort in its own tab instead.
@@ -30,12 +34,16 @@ boxes=(apg asr asr-ref board brain cis ct dev inat mep rr ta tools ws13)
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
 stagger=${CD_UP_STAGGER:-3}
 
-case "${1:-}" in
-  -h|--help)
-    echo "usage: cd-up [box...]   (default: ${boxes[*]})"
-    exit 0
-    ;;
-esac
+usage="usage: cd-up [--yolo] [box...]   (default: ${boxes[*]})"
+yolo=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --yolo) yolo=" --yolo"; shift ;;
+    -h|--help) echo "$usage"; exit 0 ;;
+    -*) echo "cd-up: unknown option: $1" >&2; echo "$usage" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
 
 if [ $# -gt 0 ]; then
   unknown=()
@@ -71,6 +79,6 @@ first=1
 for b in "${boxes[@]}"; do
   [ "$first" = 1 ] || sleep "$stagger"
   first=0
-  wt.exe -w 0 new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b -- --continue || true && exec bash"
+  wt.exe -w 0 new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
   echo "cd-up: opened cd-$b"
 done

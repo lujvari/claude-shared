@@ -41,7 +41,11 @@ so you never trade a running session to change flags.
 ```sh
 cd-up                    # every box, one Windows Terminal tab each, resumed
 cd-up rr cis             # only those
+cd-up --yolo [box...]    # pass --yolo to every box opened
 ```
+
+`--yolo` is opt-in and never the default: a `--yolo` box can use whatever
+credentials its launcher mounts without a permission prompt.
 
 Run it from WSL inside Windows Terminal. It waits for Docker (up to 180 s),
 checks `op whoami` once and stops cleanly if 1Password isn't signed in, then
