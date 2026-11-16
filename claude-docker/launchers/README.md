@@ -41,7 +41,7 @@ so you never trade a running session to change flags.
 ```sh
 cd-up                    # every box not running, a tab each, resumed
 cd-up mep cis            # only those
-cd-up --work [box...]    # place new windows for the work desk (--home)
+cd-up --work [box...]    # snap new windows to the work desk (--home)
 cd-up --yolo [box...]    # pass --yolo to every box opened
 ```
 
@@ -58,16 +58,16 @@ whose box fails stays open at a shell: retry with the up-arrow.
 The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr),
 `cd-q3` (tools, dev, mep) and `cd-q4` (brain, cis, ct, inat). An open one
 just gets the tab. Plain `cd-up` leaves placing new windows to Windows.
-`--work` or `--home` opens each new window at that desk's point inside its
-quarter; then press `Ctrl+Numpad2` (the host AutoIt script,
-`tools/autoit/MoveWindow.au3`) to snap every terminal exactly onto the half
-of its monitor it sits in. `wt.exe` sizes windows in characters, which never
-fits a quarter exactly, so cd-up only gets them into the right quarter.
+`--work` or `--home` snaps each window the run creates to exactly that desk's
+rectangle for its quarter, through the Windows API (`_snap.ps1`, run in
+Windows PowerShell). Only those windows move: a window that was already open,
+the browser and HELM stay put. A snap that fails prints
+`cd-up: could not place cd-q3 (...)`; the tabs open anyway.
 
-The groups (`q1=(...)` and the rest) and each desk's points
-(`geometry_of`) are at the top of `cd-up`; add a new launcher to a group, and
-a new desk as three more lines there. A desk with no points yet says so and
-opens unplaced; the wrong flag can put a window off-screen.
+The groups (`q1=(...)` and the rest) and each desk's rectangles (`rect_of`,
+X Y W H in physical pixels) are at the top of `cd-up`; add a new launcher to a
+group, and a new desk as three more lines there. A desk with no rectangles yet
+says so and opens unplaced; the wrong flag can put a window off-screen.
 
 The running check reads the `claude-docker.box` label `run.sh` puts on each
 container. Containers started before that label existed don't have it, so start

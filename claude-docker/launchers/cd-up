@@ -7,18 +7,19 @@
 # monitors (Q2 holds the host session, which is not a box). If one named
 # cd-q1, cd-q3 or cd-q4 is already open, the tab joins it and nothing moves.
 #
-# Placement is rough on purpose. With --work or --home a new window opens at
-# that desk's point inside its quarter, small enough that its centre stays
-# there; the Ctrl+Numpad2 hotkey in the host AutoIt script
-# (tools/autoit/MoveWindow.au3) then snaps every terminal to the half of its
-# monitor its centre is in, pixel-exact through Windows Snap. wt.exe can only
-# size a window in character cells, which never fits a quarter exactly.
-# Without a desk flag Windows places the windows; the wrong flag can put one
-# off-screen.
+# With --work or --home each window this run creates is snapped to exactly
+# that desk's rectangle for its quarter, through the Windows API (_snap.ps1,
+# run in Windows PowerShell). Only those: the terminal windows are listed
+# before a group's first tab and the one that is new gets moved, so HELM,
+# the browser and any terminal already open stay put. wt.exe's own --size
+# counts character cells, which never fits a quarter exactly; a hotkey
+# snapping from outside can't tell cd-up's windows from any other terminal.
+# A failed snap prints one line and the tabs open anyway. Without a desk flag
+# Windows places the windows; the wrong flag can put one off-screen.
 #
 #   cd-up            every box in the list below, unplaced
 #   cd-up mep cis    only those
-#   cd-up --work     place new windows for the work desk (--home: home)
+#   cd-up --work     snap new windows to the work desk (--home: home)
 #   cd-up --yolo     pass --yolo to every box opened
 #
 # --yolo is opt-in, never the default: a --yolo box can use every credential
@@ -68,16 +69,30 @@ window_of() {
   fi
 }
 
-# geometry_of <desk> <group>: a new window's --pos X,Y (pixels, 40 in from
-# the quarter's top-left) and --size COLS,ROWS (cells; 120 is ~1000 px, so
-# the centre stays inside a 1280 px quarter). Nothing for a desk not yet set.
-# work: two 2560x1440 screens side by side, primary on the left.
-geometry_of() {
+# rect_of <desk> <group>: the group window's visible rectangle, X Y W H in
+# physical pixels. Nothing for a desk not yet set.
+# work: two 2560x1440 screens side by side, primary on the left, taskbar
+# 48 px, so a quarter is 1280x1392.
+rect_of() {
   case "$1/$2" in
-    work/q1) echo "--pos 40,40 --size 120,40" ;;
-    work/q3) echo "--pos 2600,40 --size 120,40" ;;
-    work/q4) echo "--pos 3880,40 --size 120,40" ;;
+    work/q1) echo "0 0 1280 1392" ;;
+    work/q3) echo "2560 0 1280 1392" ;;
+    work/q4) echo "3840 0 1280 1392" ;;
   esac
+}
+
+here=$(dirname "$(readlink -f "$0")")
+
+# snap list | snap snap <group>: runs _snap.ps1 with $Mode, $Before (the
+# handles in $handles) and the group's rectangle, prints what it prints.
+snap() {
+  local x=0 y=0 w=0 h=0 enc
+  [ -z "${2:-}" ] || read -r x y w h <<< "$(rect_of "$desk" "$2")"
+  # shellcheck disable=SC2016  # the $ names are PowerShell's
+  enc=$({ printf '$Mode=%s; $Before=@(%s); $X=%s; $Y=%s; $W=%s; $H=%s\n' \
+            "'$1'" "$handles" "$x" "$y" "$w" "$h"
+          cat "$here/_snap.ps1"; } | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
+  powershell.exe -NoProfile -NonInteractive -EncodedCommand "$enc" | tr -d '\r'
 }
 
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
@@ -115,7 +130,7 @@ if [ $# -gt 0 ]; then
   done
 fi
 
-if [ -n "$desk" ] && [ -z "$(geometry_of "$desk" q1)" ]; then
+if [ -n "$desk" ] && [ -z "$(rect_of "$desk" q1)" ]; then
   echo "cd-up: no $desk placement yet; windows unplaced"
   desk=
 fi
@@ -153,13 +168,30 @@ if ! op whoami >/dev/null 2>&1; then
   exit 1
 fi
 
+# Terminal windows open before this run (comma-separated handles), grown by
+# each window snapped, so a later snap only ever sees its own window as new.
+handles=
+if [ -n "$desk" ] && ! handles=$(snap list | paste -sd,); then
+  echo "cd-up: could not list terminal windows; windows unplaced" >&2
+  desk=
+fi
+
 first=1
+snapped=
 for b in "${todo[@]}"; do
   [ "$first" = 1 ] || sleep "$stagger"
   first=0
   w=$(window_of "$b")
-  # Unquoted on purpose: the geometry is two flag/value pairs, or nothing.
-  # shellcheck disable=SC2046
-  wt.exe -w "cd-$w" $(geometry_of "$desk" "$w") new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
+  wt.exe -w "cd-$w" new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
   echo "cd-up: opened cd-$b"
+  if [ -n "$desk" ] && ! has "$w" "$snapped"; then
+    snapped+=" $w"
+    # Exit 3: no new window, so cd-$w was already open and stays where it is.
+    h=$(snap snap "$w") && rc=0 || rc=$?
+    if [ "$rc" = 0 ]; then
+      handles=${handles:+$handles,}$h
+    elif [ "$rc" != 3 ]; then
+      echo "cd-up: could not place cd-$w (snap exit $rc)" >&2
+    fi
+  fi
 done
