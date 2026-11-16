@@ -39,7 +39,7 @@ so you never trade a running session to change flags.
 ## After a reboot
 
 ```sh
-cd-up                    # every box, one Windows Terminal tab each, resumed
+cd-up                    # every box not running, a tab each, resumed
 cd-up mep cis            # only those
 cd-up --yolo [box...]    # pass --yolo to every box opened
 ```
@@ -48,14 +48,28 @@ cd-up --yolo [box...]    # pass --yolo to every box opened
 credentials its launcher mounts without a permission prompt.
 
 Run it from WSL inside Windows Terminal. It waits for Docker (up to 180 s),
-checks `op whoami` once and stops cleanly if 1Password isn't signed in, then
-opens one tab per box ~3 s apart so the boxes' `op read`s don't time out
-together. A tab whose box fails stays open at a shell: retry with the up-arrow.
+skips every box that is already running (`cd-up: skipped cd-cis (already
+running)`, named boxes too; run `cd-cis` itself for a second session), checks
+`op whoami` once and stops cleanly if 1Password isn't signed in, then opens one
+tab per box ~3 s apart so the boxes' `op read`s don't time out together. A tab
+whose box fails stays open at a shell: retry with the up-arrow.
 
-The fleet is the `boxes=(...)` line at the top of `cd-up`; add a new launcher
-there too. `--continue` resumes the newest session in the box's working
-directory, so a second box from the same launcher, or a `claude -p` run there
-since, can make a tab resume the wrong conversation.
+The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr),
+`cd-q3` (tools, dev, mep) and `cd-q4` (brain, cis, ct, inat). A new window
+opens at its quarter's position and size; an open one just gets the tab.
+
+The groups (`q1=(...)` and the rest) and each window's `--pos`/`--size`
+(`geometry_of`) are at the top of `cd-up`; add a new launcher to a group.
+`--pos` is in pixels and `--size` in character cells, so the fit is close, not
+exact, and on one screen a window can land partly off-screen.
+
+The running check reads the `claude-docker.box` label `run.sh` puts on each
+container. Containers started before that label existed don't have it, so start
+the first `cd-up` after updating with no box up. A box still starting has no
+container yet: running `cd-up` again while the first run is opening tabs can
+open it twice. A tab whose box has exited is not a running box either.
+`--continue` resumes the newest session in the box's working directory, so a
+`claude -p` run there since can make a tab resume the wrong conversation.
 
 ## Adding one
 

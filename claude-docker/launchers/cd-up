@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # claude-docker fleet relaunch: after a reboot, reopen every box in its own
 # Windows Terminal tab, resuming its last conversation. Run from WSL inside
-# Windows Terminal; tabs open in the current window.
+# Windows Terminal.
+#
+# The tabs go into three windows, one per screen quarter on the owner's two
+# monitors (Q2 holds the host session, which is not a box). A window opens at
+# its quarter's position and size only when it is new; if one named cd-q1,
+# cd-q3 or cd-q4 is already open, the tab joins it and nothing moves.
+# --pos is in pixels, --size in character cells, so the fit is close, not
+# exact. On a single screen (laptop undocked) a window can land partly
+# off-screen.
 #
 #   cd-up            every box in the list below
 #   cd-up mep cis    only those
@@ -12,6 +20,13 @@
 #
 # Docker and 1Password are checked once, up front: with either missing, every
 # box would abort in its own tab instead.
+#
+# A box whose container is already running is skipped, named or not: a second
+# session in it is what makes --continue resume the wrong conversation. Run
+# cd-<name> directly for one. The check reads the claude-docker.box label that
+# run.sh sets, so it misses containers started before that label existed, and
+# a box still starting (its op reads, or a test-DB lock wait) has no
+# container yet.
 #
 # One wt.exe call per box, ~3 s apart. run.sh gives each `op read` 5 s and
 # aborts the launch on any failed read; a dozen boxes reading at once at boot
@@ -28,8 +43,34 @@
 # that workspace since, can resume the wrong conversation.
 set -euo pipefail
 
-# The fleet. Each name is a cd-<name> launcher on PATH.
-boxes=(apg asr brain cis ct dev inat mep tools)
+# The fleet, one group per window. Each name is a cd-<name> launcher on PATH.
+q1=(apg asr)
+q3=(tools dev mep)
+q4=(brain cis ct inat)
+boxes=("${q1[@]}" "${q3[@]}" "${q4[@]}")
+
+# has <item> <list...>: true when item is one of the list's words.
+has() {
+  case " ${*:2} " in *" $1 "*) ;; *) return 1 ;; esac
+}
+
+# window_of <box>: prints the group (q1|q3|q4) a fleet box belongs to.
+window_of() {
+  if has "$1" "${q1[@]}"; then echo q1
+  elif has "$1" "${q3[@]}"; then echo q3
+  elif has "$1" "${q4[@]}"; then echo q4
+  fi
+}
+
+# geometry_of <group>: a new window's --pos X,Y (pixels) and --size COLS,ROWS
+# (character cells).
+geometry_of() {
+  case "$1" in
+    q1) echo "--pos 0,0 --size 120,40" ;;
+    q3) echo "--pos 0,0 --size 120,40" ;;
+    q4) echo "--pos 0,0 --size 120,40" ;;
+  esac
+}
 
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
 stagger=${CD_UP_STAGGER:-3}
@@ -48,16 +89,16 @@ done
 if [ $# -gt 0 ]; then
   unknown=()
   for b in "$@"; do
-    case " ${boxes[*]} " in
-      *" $b "*) ;;
-      *) unknown+=("$b") ;;
-    esac
+    has "$b" "${boxes[@]}" || unknown+=("$b")
   done
   if [ ${#unknown[@]} -gt 0 ]; then
     echo "cd-up: unknown box: ${unknown[*]} (known: ${boxes[*]})" >&2
     exit 2
   fi
-  boxes=("$@")
+  boxes=()
+  for b in "$@"; do
+    has "$b" "${boxes[@]}" || boxes+=("$b")
+  done
 fi
 
 waited=0
@@ -70,15 +111,36 @@ until docker info >/dev/null 2>&1; do
   waited=$((waited + 2))
 done
 
+if ! running=$(docker ps --format '{{.Label "claude-docker.box"}}' 2>/dev/null); then
+  echo "cd-up: could not list running boxes (docker ps failed); no tabs opened." >&2
+  exit 1
+fi
+mapfile -t running <<< "$running"
+todo=()
+for b in "${boxes[@]}"; do
+  if has "cd-$b" "${running[@]}"; then
+    echo "cd-up: skipped cd-$b (already running)"
+  else
+    todo+=("$b")
+  fi
+done
+if [ ${#todo[@]} -eq 0 ]; then
+  echo "cd-up: nothing to open"
+  exit 0
+fi
+
 if ! op whoami >/dev/null 2>&1; then
   echo "cd-up: 1Password is not authenticated (op whoami failed); no tabs opened." >&2
   exit 1
 fi
 
 first=1
-for b in "${boxes[@]}"; do
+for b in "${todo[@]}"; do
   [ "$first" = 1 ] || sleep "$stagger"
   first=0
-  wt.exe -w 0 new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
+  w=$(window_of "$b")
+  # Unquoted on purpose: the geometry is two flag/value pairs.
+  # shellcheck disable=SC2046
+  wt.exe -w "cd-$w" $(geometry_of "$w") new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
   echo "cd-up: opened cd-$b"
 done
