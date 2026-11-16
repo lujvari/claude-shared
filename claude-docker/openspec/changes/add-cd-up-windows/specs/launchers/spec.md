@@ -2,7 +2,7 @@
 
 ### Requirement: cd-up relaunches the box fleet in Windows Terminal tabs
 
-`launchers/cd-up` SHALL hold a hard-coded list of box names (the `cd-<name>` launchers the owner keeps open), split into groups, one group per Windows Terminal window. Run with no arguments it SHALL relaunch every listed box; run with names it SHALL relaunch only those, and SHALL reject an unknown name before opening any tab. Before opening any tab it SHALL wait, up to a bounded timeout, for `docker info` to succeed. It SHALL then skip every requested box whose container is already running, printing one line per skipped box, and SHALL say so and exit 0 without a further check when none is left. A box named more than once SHALL be handled once. If the running check itself fails it SHALL print one line and exit non-zero without opening a tab. Otherwise it SHALL check `op whoami` once; if either check fails it SHALL print one line naming the cause and exit non-zero without opening a tab. For each box it SHALL make one separate `wt.exe` call that opens a tab titled `cd-<name>` in the named window of the box's group, at that group's fixed position and size when the window does not exist yet, and runs `cd-<name> -- --continue` under `bash -lic`, leaving an interactive shell in the tab after the box exits or fails. Consecutive tab launches SHALL be spaced by a fixed delay. The command passed to `wt.exe` SHALL contain no `;` character. Given `--yolo` before the box names, it SHALL pass `--yolo` to every box it opens; without it, it SHALL NOT. An unknown option SHALL exit 2 before any check or tab.
+`launchers/cd-up` SHALL hold a hard-coded list of box names (the `cd-<name>` launchers the owner keeps open), split into groups, one group per Windows Terminal window. Run with no arguments it SHALL relaunch every listed box; run with names it SHALL relaunch only those, and SHALL reject an unknown name before opening any tab. Before opening any tab it SHALL wait, up to a bounded timeout, for `docker info` to succeed. It SHALL then skip every requested box whose container is already running, printing one line per skipped box, and SHALL say so and exit 0 without a further check when none is left. A box named more than once SHALL be handled once. If the running check itself fails it SHALL print one line and exit non-zero without opening a tab. Otherwise it SHALL check `op whoami` once; if either check fails it SHALL print one line naming the cause and exit non-zero without opening a tab. For each box it SHALL make one separate `wt.exe` call that opens a tab titled `cd-<name>` in the named window of the box's group. Given `--work` or `--home` before the box names, a window that does not exist yet SHALL open at that desk's fixed position and size for the group; without either flag, or for a desk with no geometry set (which it SHALL report in one line), it SHALL pass no position or size. Both flags together SHALL exit 2 before any check or tab. The tab and runs `cd-<name> -- --continue` under `bash -lic`, leaving an interactive shell in the tab after the box exits or fails. Consecutive tab launches SHALL be spaced by a fixed delay. The command passed to `wt.exe` SHALL contain no `;` character. Given `--yolo` before the box names, it SHALL pass `--yolo` to every box it opens; without it, it SHALL NOT. An unknown option SHALL exit 2 before any check or tab.
 
 #### Scenario: Named boxes come up resumed
 
@@ -14,8 +14,24 @@
 #### Scenario: The fleet lands in its quarters
 
 - **GIVEN** no Windows Terminal window named `cd-q1`, `cd-q3` or `cd-q4` exists and no box is running
+- **WHEN** the owner runs `cd-up --work`
+- **THEN** three windows open, each at its group's work position and size, holding `apg asr`, `tools dev mep` and `brain cis ct inat` as tabs
+
+#### Scenario: No desk flag places nothing
+
 - **WHEN** the owner runs `cd-up`
-- **THEN** three windows open, each at its group's position and size, holding `apg asr`, `tools dev mep` and `brain cis ct inat` as tabs
+- **THEN** the same three windows open, with no position or size passed to `wt.exe`
+
+#### Scenario: A desk with no geometry yet
+
+- **GIVEN** no home geometry is set
+- **WHEN** the owner runs `cd-up --home`
+- **THEN** one line says there is no home placement yet, and the windows open as with plain `cd-up`
+
+#### Scenario: Two desks at once
+
+- **WHEN** the owner runs `cd-up --home --work`
+- **THEN** it exits 2 and neither checks Docker nor opens a tab
 
 #### Scenario: An existing group window is reused
 

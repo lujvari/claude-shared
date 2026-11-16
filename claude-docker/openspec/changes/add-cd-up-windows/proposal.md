@@ -24,6 +24,13 @@ same workspace makes `--continue` liable to resume the wrong conversation.
   A window that already exists (cd-up run twice) gets the new tabs and keeps
   its place. `cd-up mep cis` still opens only those boxes, each in its own
   group's window.
+- **Placement per desk.** The owner has two desks: work (two 2560x1440
+  screens side by side) and home (layout not yet known). `--work` and
+  `--home` pick that desk's position and size for each window. Plain `cd-up`
+  places nothing: the windows are grouped and Windows puts them where it
+  likes, which is safe on any screen setup (owner, 2026-11-16). A desk whose
+  geometry is not filled in yet behaves like plain `cd-up` and says so in one
+  line. `--home` and `--work` together is an error.
 - **Running boxes are skipped.** Every launched box's container carries a
   label naming its launcher. `cd-up` checks it after the Docker preflight and,
   for a box already running, prints `cd-up: skipped cd-<b> (already running)`
@@ -37,8 +44,9 @@ Out of scope:
 
 - Pixel-exact snapping (a Windows API step after launch). Window size is set in
   character cells, so the fit is close, not exact (owner, 2026-11-16).
-- Detecting the monitor layout at run time. The geometry is hard-coded; an
-  undocked laptop with one screen may place a window partly off-screen.
+- Detecting the monitor layout at run time. The owner picks the desk with a
+  flag; the wrong flag (or `--work` on an undocked laptop) can place a window
+  partly off-screen.
 - Launching or placing HELM.
 - A box that is still starting. Its label exists only once `docker run`
   executes, after the launcher's `op read`s (and a test-DB lock wait for
