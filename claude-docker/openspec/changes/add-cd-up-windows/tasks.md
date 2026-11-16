@@ -28,4 +28,4 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-cd-up-windows --strict` exits 0
+- [x] 5.1 `openspec validate add-cd-up-windows --strict` exits 0
