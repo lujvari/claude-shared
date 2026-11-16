@@ -22,23 +22,27 @@ same workspace makes `--continue` liable to resume the wrong conversation.
   the owner named). A window that already exists (cd-up run twice) gets the
   new tabs and keeps its place. `cd-up mep cis` still opens only those boxes, each in its own
   group's window.
-- **Rough placement per desk, exact snap by hotkey.** The owner has two
-  desks: work (two 2560x1440 screens side by side) and home (layout not yet
-  known). `--work` and `--home` open each new group window at that desk's
-  point inside its quarter (`wt.exe --pos`, plus a modest fixed `--size` so
-  the window's centre stays in that quarter). Exact fit is not cd-up's job:
-  a new `Ctrl+Numpad2` hotkey in the owner's host AutoIt script
-  (`tools/autoit/MoveWindow.au3`, outside this repo) snaps every Windows
-  Terminal window to the half of its monitor its centre is in, using the
-  same Windows Snap keystrokes as its existing `Ctrl+1`/`Ctrl+2`. Windows
-  Snap is pixel-exact and needs no monitor sizes, so a desk only needs rough
-  points (owner, 2026-11-16, over a PowerShell snap inside cd-up: one
-  keypress after reboot, in exchange for no new Windows-API code and a
-  re-snap that works any time). Plain `cd-up` places nothing: the windows
-  are grouped and Windows puts them where it likes, which is safe on any
-  screen setup. A desk whose points are not filled in yet behaves like plain
-  `cd-up` and says so in one line. `--home` and `--work` together is an
-  error.
+- **Placement per desk.** The owner has two desks: work (two 2560x1440
+  screens side by side) and home (layout not yet known). `--work` and
+  `--home` pick that desk's pixel rectangle per window: once a group's
+  window is new, `cd-up` snaps it to exactly that rectangle through the
+  Windows API (PowerShell called from WSL), compensating for the invisible
+  window border. Pixel-exact, not character cells: `wt.exe --size` only takes
+  characters, which left the fit a cell off and needed tuning per desk (owner
+  chose exact snap after trying it, 2026-11-16). Only windows this run
+  created are ever moved: cd-up lists the terminal windows before opening a
+  group's first tab and snaps the one that is new. A hotkey in the owner's
+  AutoIt script was tried instead and dropped the same day: from outside, the
+  three cd-up windows can't be told apart from every other terminal (Claude
+  Code rewrites the titles), so it moved them all. No new window within a few
+  seconds means the group window already existed: nothing is moved, nothing
+  is printed. A snap that fails otherwise (PowerShell error) prints one
+  warning line; the tabs still open and the window stays where Windows put
+  it. Plain `cd-up`
+  places nothing: the windows are grouped and Windows puts them where it
+  likes, which is safe on any screen setup (owner, 2026-11-16). A desk whose
+  geometry is not filled in yet behaves like plain `cd-up` and says so in one
+  line. `--home` and `--work` together is an error.
 - **Running boxes are skipped.** Every launched box's container carries a
   label naming its launcher. `cd-up` checks it after the Docker preflight and,
   for a box already running, prints `cd-up: skipped cd-<b> (already running)`
@@ -50,11 +54,9 @@ same workspace makes `--continue` liable to resume the wrong conversation.
 
 Out of scope:
 
-- Moving a window that already existed before the run (`--pos` only applies
-  to a new window; the hotkey snaps whatever is there).
-- Deriving the points from the screen layout at run time; each desk's three
-  points are written into the script once.
-- Running the snap automatically from cd-up. The hotkey is a manual step.
+- Moving a window that already existed before the run.
+- Rectangles derived from the screen layout at run time; each desk's three
+  rectangles are written into the script once.
 - Detecting the monitor layout at run time. The owner picks the desk with a
   flag; the wrong flag (or `--work` on an undocked laptop) can place a window
   partly off-screen.
@@ -83,10 +85,10 @@ None.
 
 ## Impact
 
-- `launchers/cd-up`: grouped fleet, per-desk points, running check.
-- Outside this repo: `tools/autoit/MoveWindow.au3` gains the `Ctrl+Numpad2`
-  hotkey, and its README the row for it. That folder is not a git repo; the
-  running script has to be restarted to pick the hotkey up.
+- `launchers/cd-up`: grouped fleet, per-desk rectangles, running check.
+- `launchers/_snap.ps1` (new): lists Windows Terminal windows, and snaps the
+  one that appeared since a given list to a rectangle. Fed to `powershell.exe
+  -EncodedCommand`, so no execution policy or Windows path is involved.
 - `launchers/_lib.sh`: exports the launcher's name for run.sh.
 - `run.sh`: one `--label` on `docker run`.
 - `launchers/README.md`: the "After a reboot" section.
