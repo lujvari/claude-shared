@@ -17,8 +17,8 @@
 - [x] 3.1 In-box, with shims on PATH (no `wt.exe`, `docker` or `op` in the box): fake `wt.exe`, `docker`, `op` and `sleep` that log their argv. Check: (a) no args = one `wt.exe` call per listed box, in order, each argv with no `;`; (b) `cd-up rr cis` = exactly those two; (c) unknown name = exit 2, no `docker`/`wt.exe` call; (d) `op whoami` failing = exit 1, no `wt.exe` call; (e) `docker info` failing with a short wait = exit 1, no `op`/`wt.exe` call. Harness passes 6/6 (plus `--help` opens nothing). Scratch harness, not committed.
 - [x] 3.5 Extend the 3.1 harness: (g) no flag = no tab argv has `--yolo`; (h) `--yolo` = every tab argv has it, none contains `;`; (i) `--yolo rr cis` = exactly those two, with `--yolo`; (j) `--yolp rr` = exit 2, no `docker`/`op`/`wt.exe` call.  Passes 4/4 alongside the original 6, plus (k) `rr --yolo` = rejected as an unknown box (flags must come first).
 - [x] 3.2 `bash -n` and `shellcheck -s bash` (shellcheck-py in a scratch venv) clean on `cd-up`.
-- [ ] 3.3 Live on WSL (owner): `cd-up` with two boxes opens two titled tabs and both resume their conversation.
-- [ ] 3.4 Live on WSL (owner): with `op` unauthenticated (e.g. `OP_SERVICE_ACCOUNT_TOKEN= cd-up rr`), it stops with the clean line and opens nothing.
+- [x] 3.3 Live on WSL (owner): `cd-up` with two boxes opens two titled tabs and both resume their conversation.
+- [x] 3.4 Live on WSL (owner): with `op` unauthenticated (e.g. `OP_SERVICE_ACCOUNT_TOKEN= cd-up rr`), it stops with the clean line and opens nothing.
 
 ## 4. Validation
 
