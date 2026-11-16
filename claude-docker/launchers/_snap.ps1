@@ -14,6 +14,12 @@
 # (DWMWA_EXTENDED_FRAME_BOUNDS), and placed again grown by the borders.
 # Per-monitor DPI awareness on the thread keeps both in physical pixels.
 # Any error: one line on stderr, exit 1.
+#
+# -EncodedCommand makes powershell.exe write its other streams to stderr as
+# CLIXML for a calling PowerShell; the progress bar Windows PowerShell shows
+# while loading a module ("Preparing modules for first use") would land in
+# cd-up's output as an XML blob. So no progress, and errors go out as text.
+$ProgressPreference = 'SilentlyContinue'
 trap { [Console]::Error.WriteLine($_.ToString()); exit 1 }
 $ErrorActionPreference = 'Stop'
 

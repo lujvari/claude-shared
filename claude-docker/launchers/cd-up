@@ -92,7 +92,7 @@ snap() {
   enc=$({ printf '$Mode=%s; $Before=@(%s); $X=%s; $Y=%s; $W=%s; $H=%s\n' \
             "'$1'" "$handles" "$x" "$y" "$w" "$h"
           cat "$here/_snap.ps1"; } | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
-  powershell.exe -NoProfile -NonInteractive -EncodedCommand "$enc" | tr -d '\r'
+  powershell.exe -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand "$enc" | tr -d '\r'
 }
 
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
