@@ -1,7 +1,7 @@
 ## 1. Box label
 
-- [ ] 1.1 `launchers/_lib.sh`: `export CLAUDE_DOCKER_BOX=$(basename "$0")`, next to the bus and Brain exports, with a comment (who reads it, why `$0`: every launcher sources this file, so `$0` is the `cd-<name>` symlink on PATH). Set unconditionally, never inherited.
-- [ ] 1.2 `run.sh`: `--label "claude-docker.box=${CLAUDE_DOCKER_BOX:-}"` on the `docker run` line. Always present, empty when run.sh is called directly (the docker run line takes no conditionally-empty array, see the comment above MOUNT_ARGS). Mention `CLAUDE_DOCKER_BOX` in run.sh's env help next to `CLAUDE_DOCKER_BUS_DIR`.
+- [x] 1.1 `launchers/_lib.sh`: `export CLAUDE_DOCKER_BOX=$(basename "$0")`, next to the bus and Brain exports, with a comment (who reads it, why `$0`: every launcher sources this file, so `$0` is the `cd-<name>` symlink on PATH). Set unconditionally, never inherited.
+- [x] 1.2 `run.sh`: `--label "claude-docker.box=${CLAUDE_DOCKER_BOX:-}"` on the `docker run` line. Always present, empty when run.sh is called directly (the docker run line takes no conditionally-empty array, see the comment above MOUNT_ARGS). Mention `CLAUDE_DOCKER_BOX` in run.sh's env help next to `CLAUDE_DOCKER_BUS_DIR`.
 
 ## 2. launchers/cd-up
 
