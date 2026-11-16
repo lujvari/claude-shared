@@ -40,7 +40,7 @@ so you never trade a running session to change flags.
 
 ```sh
 cd-up                    # every box, one Windows Terminal tab each, resumed
-cd-up rr cis             # only those
+cd-up mep cis             # only those
 cd-up --yolo [box...]    # pass --yolo to every box opened
 ```
 

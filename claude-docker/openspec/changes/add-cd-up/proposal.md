@@ -9,7 +9,7 @@ tab-by-tab relaunch.
 
 - **New `launchers/cd-up`.** One command, run from WSL, that opens one Windows
   Terminal tab per box in the current window and resumes each box's last
-  conversation. `cd-up` with no arguments opens the whole fleet; `cd-up rr cis`
+  conversation. `cd-up` with no arguments opens the whole fleet; `cd-up mep cis`
   opens only the named boxes. The fleet list is hard-coded in the script: it
   barely changes, and editing one line beats any registry.
 - **Preflight, once, before any tab.** Wait for `docker info` to succeed

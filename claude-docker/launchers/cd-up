@@ -4,7 +4,7 @@
 # Windows Terminal; tabs open in the current window.
 #
 #   cd-up            every box in the list below
-#   cd-up rr cis     only those
+#   cd-up mep cis    only those
 #   cd-up --yolo     pass --yolo to every box opened
 #
 # --yolo is opt-in, never the default: a --yolo box can use every credential
@@ -29,7 +29,7 @@
 set -euo pipefail
 
 # The fleet. Each name is a cd-<name> launcher on PATH.
-boxes=(apg asr asr-ref board brain cis ct dev inat mep rr ta tools ws13)
+boxes=(apg asr brain cis ct dev inat mep tools)
 
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
 stagger=${CD_UP_STAGGER:-3}

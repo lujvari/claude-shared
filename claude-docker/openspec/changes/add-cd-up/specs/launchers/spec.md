@@ -7,8 +7,8 @@
 #### Scenario: Named boxes come up resumed
 
 - **GIVEN** Docker is running and `op whoami` succeeds
-- **WHEN** the owner runs `cd-up rr cis` from a WSL shell inside Windows Terminal
-- **THEN** two new tabs titled `cd-rr` and `cd-cis` open in the current window, about 3 s apart
+- **WHEN** the owner runs `cd-up mep cis` from a WSL shell inside Windows Terminal
+- **THEN** two new tabs titled `cd-mep` and `cd-cis` open in the current window, about 3 s apart
 - **AND** each tab shows its box resuming the previous conversation
 
 #### Scenario: 1Password not authenticated
@@ -26,7 +26,7 @@
 
 #### Scenario: Unknown box name
 
-- **WHEN** the owner runs `cd-up rr nope`
+- **WHEN** the owner runs `cd-up mep nope`
 - **THEN** it names `nope` as unknown, lists the valid names, and opens no tab
 
 #### Scenario: A failed launch stays open
@@ -37,12 +37,12 @@
 
 #### Scenario: --yolo is opt-in
 
-- **WHEN** the owner runs `cd-up --yolo rr cis`
-- **THEN** both tabs run `cd-rr --yolo -- --continue` and `cd-cis --yolo -- --continue`
-- **WHEN** the owner runs `cd-up rr`
-- **THEN** the tab runs `cd-rr -- --continue`, without `--yolo`
+- **WHEN** the owner runs `cd-up --yolo mep cis`
+- **THEN** both tabs run `cd-mep --yolo -- --continue` and `cd-cis --yolo -- --continue`
+- **WHEN** the owner runs `cd-up mep`
+- **THEN** the tab runs `cd-mep -- --continue`, without `--yolo`
 
 #### Scenario: Unknown option
 
-- **WHEN** the owner runs `cd-up --yolp rr`
+- **WHEN** the owner runs `cd-up --yolp mep`
 - **THEN** it names `--yolp` as unknown, exits 2, and neither checks Docker nor opens a tab
