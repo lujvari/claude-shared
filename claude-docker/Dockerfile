@@ -586,6 +586,8 @@ RUN if [ "$(getent passwd 1000 | cut -d: -f1)" = ubuntu ]; then \
       /home/claude/.local \
       /home/claude/.local/bin \
       /home/claude/.venvs \
+      /home/claude/.inat \
+      /home/claude/.inat/rules \
  && rm -rf /root \
  && ln -s /home/claude /root
 

@@ -79,7 +79,7 @@ Conversation history persists in the shared `claude-code-home` volume (skipped u
 
 ## Host config parity
 
-On every run, these items are dereferenced (symlinks resolved) and bind-mounted read-only into the container at the equivalent `/home/claude/.claude/` path:
+On every run, these items are bind-mounted read-only into the container at the equivalent `/home/claude/` path. Symlinks are resolved: `agents/`, `skills/` and `commands/` are staged with `cp -RL`; the rest are mounted directly, so a link inside `~/.inat/rules/` would not resolve.
 
 | Item                              | Purpose                             |
 |-----------------------------------|-------------------------------------|
@@ -88,6 +88,9 @@ On every run, these items are dereferenced (symlinks resolved) and bind-mounted 
 | `~/.claude/commands/`             | slash commands                      |
 | `~/.claude/CLAUDE.md`             | global preferences (`gprefs`)       |
 | `~/.claude/statusline-command.sh` | statusline renderer                 |
+| `~/.inat/rules/`                  | inat user rules (`inat --user`)     |
+
+`~/.inat/rules/` is looked up beside the real config dir: with `--claude-dir=PATH`, or a `~/.claude` that links to `C:`, it is `PATH/../.inat/rules`. Only `rules/` is mounted; `config.json` and the cache stay on the host. If it is missing while `CLAUDE.md` points at `~/.inat/rules/`, `run.sh` warns and launches without it.
 
 For `settings.json`, maintain a dedicated `~/.claude/settings.docker.json` (any valid Claude `settings.json` schema). It is bind-mounted read-only as a *seed* and the entrypoint copies it onto a writable `/home/claude/.claude/settings.json` on every container start. This keeps the on-start default in sync with `settings.docker.json` while letting in-session writes like `/effort` succeed (a read-only single-file bind mount can't be written, which previously surfaced as `EBUSY`); such live changes apply to that container's session only and reset to the seed on the next start. Keeping it separate from your host `settings.json` avoids dragging macOS-only keys (`sandbox`, `env.SSL_CERT_FILE`, `enabledPlugins`) or host-filesystem `hooks` into the container. See [`examples/settings.docker.json`](examples/settings.docker.json) for a starting point.
 
@@ -652,7 +655,7 @@ docker build -t claude-code:local /mnt/c/dev/tools/claude-shared/claude-docker
 #    Docker would otherwise create root-owned on a later --aws/--tfe run.
 docker run --rm --user 0:0 --entrypoint sh \
   -v claude-code-root:/r -v claude-code-home:/h claude-code:local \
-  -c 'mkdir -p /r/.config/gh /r/.config/glab-cli /r/.aws /r/.terraform.d /r/.local/bin /r/.venvs && chown -R 1000:1000 /r /h'
+  -c 'mkdir -p /r/.config/gh /r/.config/glab-cli /r/.aws /r/.terraform.d /r/.local/bin /r/.venvs /r/.inat/rules && chown -R 1000:1000 /r /h'
 
 # 3. Give back the files root boxes left on the host. Only box-written files
 #    carry uid 0 in drvfs metadata, so this touches nothing else.

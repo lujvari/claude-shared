@@ -271,7 +271,8 @@ Wrapper flags:
                       Equivalent to CLAUDE_DOCKER_TMUX=1.
   --claude-dir=PATH   Use PATH as the host Claude config dir instead of
                       ~/.claude. Affects agents, commands, skills, CLAUDE.md,
-                      and statusline. Env: CLAUDE_DOCKER_CONFIG_DIR.
+                      statusline, and inat user rules (PATH/../.inat/rules).
+                      Env: CLAUDE_DOCKER_CONFIG_DIR.
   --no-bus            Skip the agent-bus mailbox mount for this launch. By
                       default, when CLAUDE_DOCKER_BUS_DIR names an existing
                       host dir, the box gets its OWN mailbox only:
@@ -1582,6 +1583,15 @@ if [ -d "$SELF_DIR/hooks" ]; then
 fi
 if [ -f "$CLAUDE_CONFIG_DIR/CLAUDE.md" ]; then
   MOUNT_ARGS+=("-v" "$CLAUDE_CONFIG_DIR/CLAUDE.md:/home/claude/.claude/CLAUDE.md:ro")
+fi
+# inat user rules live beside the real config dir (pwd -P resolves links on
+# bash 3.2). Only rules/ is mounted; the rest of .inat is host state.
+rules_home=$(cd "$CLAUDE_CONFIG_DIR" 2>/dev/null && pwd -P)
+rules_home=${rules_home%/*}
+if [ -n "$rules_home" ] && [ -d "$rules_home/.inat/rules" ]; then
+  MOUNT_ARGS+=("-v" "$rules_home/.inat/rules:/home/claude/.inat/rules:ro")
+elif grep -qF '~/.inat/rules/' "$CLAUDE_CONFIG_DIR/CLAUDE.md" 2>/dev/null; then
+  echo "claude-docker: no $rules_home/.inat/rules; inat rules not mounted" >&2
 fi
 
 # Statusline: mount the host script as-is, plus a thin wrapper at the canonical
