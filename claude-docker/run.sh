@@ -303,6 +303,9 @@ Environment:
                            --claude-dir=PATH).
   CLAUDE_DOCKER_BUS_DIR    Host agent-bus dir (see --no-bus). Unset or
                            missing: no mailbox is mounted.
+  CLAUDE_DOCKER_BOX        Launcher name, set by launchers/_lib.sh. Becomes
+                           the container label claude-docker.box (empty when
+                           run.sh is called directly); cd-up reads it.
   CLAUDE_DOCKER_NO_TOKEN_PROBE
                            1 → skip the launch-time token check. By default
                            each credential flag gets one identity request
@@ -1800,6 +1803,7 @@ fi
 # DAC_OVERRIDE/FOWNER existed only so root could write files it didn't own,
 # and a non-root process gets no effective capabilities anyway.
 docker run --rm "$DOCKER_TTY_FLAGS" \
+  --label "claude-docker.box=${CLAUDE_DOCKER_BOX:-}" \
   --user "$BOX_UID:$BOX_GID" \
   --security-opt no-new-privileges \
   --cap-drop ALL \

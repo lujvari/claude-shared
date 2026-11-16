@@ -21,6 +21,13 @@ export CLAUDE_DOCKER_DEV_ROOT="$DEV"
 # without it; an explicit CLAUDE_DOCKER_BUS_DIR still wins.
 export CLAUDE_DOCKER_BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-$DEV/.agent-bus}"
 
+# The launcher's own name (cd-cis), for run.sh's claude-docker.box label, which
+# cd-up uses to skip a box that is already running. Every launcher sources this
+# file, so $0 is the cd-<name> symlink on PATH. Set, never inherited: a launcher
+# started from inside another one's environment still names itself.
+export CLAUDE_DOCKER_BOX
+CLAUDE_DOCKER_BOX=$(basename "$0")
+
 # Every launched box gets the remote Brain MCP (--brain in run.sh). The same
 # exported-not-flagged split as the bus. It fails closed, so a launcher whose
 # Brain refs don't resolve is blocked. Export CLAUDE_DOCKER_BRAIN=0 to opt out.
