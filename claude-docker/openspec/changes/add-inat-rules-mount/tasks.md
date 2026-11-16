@@ -37,4 +37,4 @@ The owner runs one WSL heredoc and pastes the output back. Present and absent ca
 
 - [x] 5.1 `openspec validate add-inat-rules-mount --strict` exits 0.
 - [x] 5.2 Commit to `main` and push.
-- [ ] 5.3 Post the result to `host` and ask it to relay to the inat box (`sbp.ai.inat`); a box can only post to `host`. Close bus message `20261116T114253Z-38fbc7`.
+- [x] 5.3 Post the result to `host` and ask it to relay to the inat box (`sbp.ai.inat`); a box can only post to `host`. Close bus message `20261116T114253Z-38fbc7`.
