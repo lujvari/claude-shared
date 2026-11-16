@@ -4,15 +4,21 @@
 # Windows Terminal.
 #
 # The tabs go into three windows, one per screen quarter on the owner's two
-# monitors (Q2 holds the host session, which is not a box). A window opens at
-# its quarter's position and size only when it is new; if one named cd-q1,
-# cd-q3 or cd-q4 is already open, the tab joins it and nothing moves.
-# --pos is in pixels, --size in character cells, so the fit is close, not
-# exact. On a single screen (laptop undocked) a window can land partly
+# monitors (Q2 holds the host session, which is not a box). If one named
+# cd-q1, cd-q3 or cd-q4 is already open, the tab joins it and nothing moves.
+#
+# Placement is rough on purpose. With --work or --home a new window opens at
+# that desk's point inside its quarter, small enough that its centre stays
+# there; the Ctrl+Numpad2 hotkey in the host AutoIt script
+# (tools/autoit/MoveWindow.au3) then snaps every terminal to the half of its
+# monitor its centre is in, pixel-exact through Windows Snap. wt.exe can only
+# size a window in character cells, which never fits a quarter exactly.
+# Without a desk flag Windows places the windows; the wrong flag can put one
 # off-screen.
 #
-#   cd-up            every box in the list below
+#   cd-up            every box in the list below, unplaced
 #   cd-up mep cis    only those
+#   cd-up --work     place new windows for the work desk (--home: home)
 #   cd-up --yolo     pass --yolo to every box opened
 #
 # --yolo is opt-in, never the default: a --yolo box can use every credential
@@ -62,24 +68,32 @@ window_of() {
   fi
 }
 
-# geometry_of <group>: a new window's --pos X,Y (pixels) and --size COLS,ROWS
-# (character cells).
+# geometry_of <desk> <group>: a new window's --pos X,Y (pixels, 40 in from
+# the quarter's top-left) and --size COLS,ROWS (cells; 120 is ~1000 px, so
+# the centre stays inside a 1280 px quarter). Nothing for a desk not yet set.
+# work: two 2560x1440 screens side by side, primary on the left.
 geometry_of() {
-  case "$1" in
-    q1) echo "--pos 0,0 --size 120,40" ;;
-    q3) echo "--pos 0,0 --size 120,40" ;;
-    q4) echo "--pos 0,0 --size 120,40" ;;
+  case "$1/$2" in
+    work/q1) echo "--pos 40,40 --size 120,40" ;;
+    work/q3) echo "--pos 2600,40 --size 120,40" ;;
+    work/q4) echo "--pos 3880,40 --size 120,40" ;;
   esac
 }
 
 docker_wait=${CD_UP_DOCKER_WAIT:-180}
 stagger=${CD_UP_STAGGER:-3}
 
-usage="usage: cd-up [--yolo] [box...]   (default: ${boxes[*]})"
+usage="usage: cd-up [--work|--home] [--yolo] [box...]   (default: ${boxes[*]})"
 yolo=
+desk=
 while [ $# -gt 0 ]; do
   case "$1" in
     --yolo) yolo=" --yolo"; shift ;;
+    --work|--home)
+      if [ -n "$desk" ] && [ "$desk" != "${1#--}" ]; then
+        echo "cd-up: --work and --home are exclusive" >&2; echo "$usage" >&2; exit 2
+      fi
+      desk=${1#--}; shift ;;
     -h|--help) echo "$usage"; exit 0 ;;
     -*) echo "cd-up: unknown option: $1" >&2; echo "$usage" >&2; exit 2 ;;
     *) break ;;
@@ -99,6 +113,11 @@ if [ $# -gt 0 ]; then
   for b in "$@"; do
     has "$b" "${boxes[@]}" || boxes+=("$b")
   done
+fi
+
+if [ -n "$desk" ] && [ -z "$(geometry_of "$desk" q1)" ]; then
+  echo "cd-up: no $desk placement yet; windows unplaced"
+  desk=
 fi
 
 waited=0
@@ -139,8 +158,8 @@ for b in "${todo[@]}"; do
   [ "$first" = 1 ] || sleep "$stagger"
   first=0
   w=$(window_of "$b")
-  # Unquoted on purpose: the geometry is two flag/value pairs.
+  # Unquoted on purpose: the geometry is two flag/value pairs, or nothing.
   # shellcheck disable=SC2046
-  wt.exe -w "cd-$w" $(geometry_of "$w") new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
+  wt.exe -w "cd-$w" $(geometry_of "$desk" "$w") new-tab --title "cd-$b" wsl.exe -e bash -lic "cd-$b$yolo -- --continue || true && exec bash"
   echo "cd-up: opened cd-$b"
 done
