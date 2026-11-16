@@ -19,14 +19,19 @@ same workspace makes `--continue` liable to resume the wrong conversation.
 - **One window per quarter.** The fleet list in `cd-up` becomes three groups,
   one per quarter. Each group opens in its own named Windows Terminal window
   (`cd-q1`, `cd-q3`, `cd-q4`, prefixed so they can't collide with a window
-  the owner named). A window that does not exist yet opens at a fixed
-  position and size set in the script, tuned once to the owner's monitors.
-  A window that already exists (cd-up run twice) gets the new tabs and keeps
-  its place. `cd-up mep cis` still opens only those boxes, each in its own
+  the owner named). A window that already exists (cd-up run twice) gets the
+  new tabs and keeps its place. `cd-up mep cis` still opens only those boxes, each in its own
   group's window.
 - **Placement per desk.** The owner has two desks: work (two 2560x1440
   screens side by side) and home (layout not yet known). `--work` and
-  `--home` pick that desk's position and size for each window. Plain `cd-up`
+  `--home` pick that desk's pixel rectangle per window: once a group's
+  window is new, `cd-up` snaps it to exactly that rectangle through the
+  Windows API (PowerShell called from WSL), compensating for the invisible
+  window border. Pixel-exact, not character cells: `wt.exe --size` only takes
+  characters, which left the fit a cell off and needed tuning per desk (owner
+  chose exact snap after trying it, 2026-11-16). A snap that fails (no new
+  window found, PowerShell error) prints one warning line; the tabs still open
+  and the window stays where Windows put it. Plain `cd-up`
   places nothing: the windows are grouped and Windows puts them where it
   likes, which is safe on any screen setup (owner, 2026-11-16). A desk whose
   geometry is not filled in yet behaves like plain `cd-up` and says so in one
@@ -42,8 +47,9 @@ same workspace makes `--continue` liable to resume the wrong conversation.
 
 Out of scope:
 
-- Pixel-exact snapping (a Windows API step after launch). Window size is set in
-  character cells, so the fit is close, not exact (owner, 2026-11-16).
+- Moving a window that already existed before the run.
+- Rectangles derived from the screen layout at run time; each desk's three
+  rectangles are written into the script once.
 - Detecting the monitor layout at run time. The owner picks the desk with a
   flag; the wrong flag (or `--work` on an undocked laptop) can place a window
   partly off-screen.
@@ -72,7 +78,10 @@ None.
 
 ## Impact
 
-- `launchers/cd-up`: grouped fleet, per-window geometry, running check.
+- `launchers/cd-up`: grouped fleet, per-desk rectangles, running check.
+- `launchers/_snap.ps1` (new): lists Windows Terminal windows, and snaps the
+  one that appeared since a given list to a rectangle. Fed to `powershell.exe
+  -EncodedCommand`, so no execution policy or Windows path is involved.
 - `launchers/_lib.sh`: exports the launcher's name for run.sh.
 - `run.sh`: one `--label` on `docker run`.
 - `launchers/README.md`: the "After a reboot" section.

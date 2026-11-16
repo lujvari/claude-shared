@@ -2,7 +2,7 @@
 
 ### Requirement: cd-up relaunches the box fleet in Windows Terminal tabs
 
-`launchers/cd-up` SHALL hold a hard-coded list of box names (the `cd-<name>` launchers the owner keeps open), split into groups, one group per Windows Terminal window. Run with no arguments it SHALL relaunch every listed box; run with names it SHALL relaunch only those, and SHALL reject an unknown name before opening any tab. Before opening any tab it SHALL wait, up to a bounded timeout, for `docker info` to succeed. It SHALL then skip every requested box whose container is already running, printing one line per skipped box, and SHALL say so and exit 0 without a further check when none is left. A box named more than once SHALL be handled once. If the running check itself fails it SHALL print one line and exit non-zero without opening a tab. Otherwise it SHALL check `op whoami` once; if either check fails it SHALL print one line naming the cause and exit non-zero without opening a tab. For each box it SHALL make one separate `wt.exe` call that opens a tab titled `cd-<name>` in the named window of the box's group. Given `--work` or `--home` before the box names, a window that does not exist yet SHALL open at that desk's fixed position and size for the group; without either flag, or for a desk with no geometry set (which it SHALL report in one line), it SHALL pass no position or size. Both flags together SHALL exit 2 before any check or tab. The tab and runs `cd-<name> -- --continue` under `bash -lic`, leaving an interactive shell in the tab after the box exits or fails. Consecutive tab launches SHALL be spaced by a fixed delay. The command passed to `wt.exe` SHALL contain no `;` character. Given `--yolo` before the box names, it SHALL pass `--yolo` to every box it opens; without it, it SHALL NOT. An unknown option SHALL exit 2 before any check or tab.
+`launchers/cd-up` SHALL hold a hard-coded list of box names (the `cd-<name>` launchers the owner keeps open), split into groups, one group per Windows Terminal window. Run with no arguments it SHALL relaunch every listed box; run with names it SHALL relaunch only those, and SHALL reject an unknown name before opening any tab. Before opening any tab it SHALL wait, up to a bounded timeout, for `docker info` to succeed. It SHALL then skip every requested box whose container is already running, printing one line per skipped box, and SHALL say so and exit 0 without a further check when none is left. A box named more than once SHALL be handled once. If the running check itself fails it SHALL print one line and exit non-zero without opening a tab. Otherwise it SHALL check `op whoami` once; if either check fails it SHALL print one line naming the cause and exit non-zero without opening a tab. For each box it SHALL make one separate `wt.exe` call that opens a tab titled `cd-<name>` in the named window of the box's group. Given `--work` or `--home` before the box names, a window that the run newly creates SHALL be moved and sized to exactly that desk's pixel rectangle for the group, its visible edges on the rectangle's edges; a window that already existed SHALL NOT be moved. Without either flag, or for a desk with no rectangles set (which it SHALL report in one line), it SHALL move no window. If a move fails it SHALL print one warning line and carry on opening tabs. Both flags together SHALL exit 2 before any check or tab. The tab SHALL run `cd-<name> -- --continue` under `bash -lic`, leaving an interactive shell in the tab after the box exits or fails. Consecutive tab launches SHALL be spaced by a fixed delay. The command passed to `wt.exe` SHALL contain no `;` character. Given `--yolo` before the box names, it SHALL pass `--yolo` to every box it opens; without it, it SHALL NOT. An unknown option SHALL exit 2 before any check or tab.
 
 #### Scenario: Named boxes come up resumed
 
@@ -15,18 +15,24 @@
 
 - **GIVEN** no Windows Terminal window named `cd-q1`, `cd-q3` or `cd-q4` exists and no box is running
 - **WHEN** the owner runs `cd-up --work`
-- **THEN** three windows open, each at its group's work position and size, holding `apg asr`, `tools dev mep` and `brain cis ct inat` as tabs
+- **THEN** three windows open, each filling its quarter exactly (1280x1392 at x 0, 2560 and 3840 on the work screens), holding `apg asr`, `tools dev mep` and `brain cis ct inat` as tabs
 
 #### Scenario: No desk flag places nothing
 
 - **WHEN** the owner runs `cd-up`
-- **THEN** the same three windows open, with no position or size passed to `wt.exe`
+- **THEN** the same three windows open where Windows puts them, and none is moved
 
 #### Scenario: A desk with no geometry yet
 
 - **GIVEN** no home geometry is set
 - **WHEN** the owner runs `cd-up --home`
 - **THEN** one line says there is no home placement yet, and the windows open as with plain `cd-up`
+
+#### Scenario: A snap fails
+
+- **GIVEN** `cd-up --work` and the PowerShell step errors for window `cd-q3`
+- **WHEN** the run reaches `tools`
+- **THEN** one line warns that `cd-q3` could not be placed, and every tab still opens
 
 #### Scenario: Two desks at once
 
