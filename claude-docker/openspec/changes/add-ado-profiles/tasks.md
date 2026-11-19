@@ -162,4 +162,4 @@ Rebuild the image for 2.10. Only a fresh volume depends on it.
 
 - [x] 7.1 `run.sh`: tag `ado:<profile>`, else `ado:<CLAUDE_DOCKER_ADO_LABEL>`, else `ado`; env-file loader skips the label key; help text. **Proof:** the tag expression gives `ado:apg` / `ado:ct` / `ado` for profile+label / label only / neither; `bash -n run.sh`.
 - [x] 7.2 `cd-ct`, `cd-ws13`: `export CLAUDE_DOCKER_ADO_LABEL=ct`. README line under "Named ADO profiles".
-- [ ] 7.3 Relaunch `cd-ct` from WSL. Check: tag `ado:ct`; `az devops configure --list` unchanged.
+- [x] 7.3 Relaunch `cd-ct` from WSL. Check: tag `ado:ct`; `az devops configure --list` unchanged.
