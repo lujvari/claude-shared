@@ -38,7 +38,7 @@ This requirement takes precedence, for profile boxes, over the `--ado` forwardin
 
 - **GIVEN** the env file contains `CLAUDE_DOCKER_ADO_PROFILE=apg` and the launching environment does not set it
 - **WHEN** `cd-ct` launches
-- **THEN** the box is a default ADO box (tag `ado`, SBP PAT)
+- **THEN** the box is a default ADO box (tag `ado`, or `ado:<label>` from the launcher; default PAT)
 
 #### Scenario: Missing or unreadable profile op-ref aborts
 
@@ -88,6 +88,16 @@ This requirement takes precedence, for profile boxes, over the `--ado` forwardin
 - **GIVEN** `CLAUDE_DOCKER_ADO_PROFILE` unset, and the env file sets `CLAUDE_DOCKER_ADO_OP_REF` and `CLAUDE_DOCKER_ADO_ORG=sbp-controltower`
 - **WHEN** `cd-ct` launches
 - **THEN** the PAT source, the git helper scope (all of `dev.azure.com`), the probe and the `ado` tag are as before this change
+
+### Requirement: Display label for a default Azure DevOps box
+
+`CLAUDE_DOCKER_ADO_LABEL`, read from the launching environment only (`run.sh` SHALL ignore it in the env file), SHALL change the tag of a default `--ado` box in `CLAUDE_DOCKER_FLAGS` to `ado:<label>`. It SHALL change nothing else: not the PAT source, git helper scope, token probe or masking. A profile box SHALL keep `ado:<profile>` and ignore the label.
+
+#### Scenario: Control-tower box shows its label
+
+- **GIVEN** `cd-ct` exports `CLAUDE_DOCKER_ADO_LABEL=ct` and no profile
+- **WHEN** it launches with `--ado`
+- **THEN** `CLAUDE_DOCKER_FLAGS` contains `ado:ct`, and the box is otherwise a default ADO box
 
 ### Requirement: Persisted Azure DevOps CLI state is visible only to default ADO boxes
 

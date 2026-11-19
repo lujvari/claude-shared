@@ -135,13 +135,13 @@ pointer, not a secret.
 
 Rebuild the image for 2.10. Only a fresh volume depends on it.
 
-- [ ] 6.1 Create the PAT in `dev.azure.com/aamnld`:
+- [x] 6.1 Create the PAT in `dev.azure.com/aamnld`:
   - Organization: `aamnld` only;
   - Scopes: Code → Read.
   
   Store it in 1Password vault `claude-docker`, item `AzureDevOps PAT APG`, field `credential`. Copy a clone URL from the ADO web UI and check the org's spelling and case against `CLAUDE_DOCKER_ADO_APG_ORGS`. **Proof:** `op read "op://claude-docker/AzureDevOps PAT APG/credential" | wc -c` prints a non-zero count.
-- [ ] 6.2 Install the changed launcher with `inat` from the control session. `run.sh` and `lib/` are read from the checkout. Rebuild the image with the `docker build` line from README "one-off migration".
-- [ ] 6.3 Run `AZURE_DEVOPS_EXT_PAT=dummy cd-apg`. Check:
+- [ ] 6.2 No install step is needed: `~/bin/cd-*` are symlinks into the checkout. Rebuild the image (the `docker build` line in README "one-off migration") so the Dockerfile mountpoints are in place before a volume is ever recreated.
+- [x] 6.3 Run `AZURE_DEVOPS_EXT_PAT=dummy cd-apg`. Check:
   - one note that the host PAT was dropped;
   - tag `ado:apg`;
   - no rejected-token warning.
@@ -151,9 +151,15 @@ Rebuild the image for 2.10. Only a fresh volume depends on it.
   - `git ls-remote https://dev.azure.com/aamnld/ccoe/_git/platform-iam` lists refs;
   - `git credential fill` for a `sbp-controltower` URL gets no password;
   - `ls -A ~/.azure/azuredevops ~/.azure-devops` is empty.
-- [ ] 6.4 Run `CLAUDE_DOCKER_OP_OPTIONAL=1 CLAUDE_DOCKER_ADO_APG_OP_REF='op://claude-docker/no-such-item/credential' cd-apg`. It must abort before launch, naming the variable. (b) In a normal `cd-apg` box, run `az devops configure --defaults organization=https://dev.azure.com/aamnld`, exit, then go to 6.5.
-- [ ] 6.5 Regression: start `cd-ct` with `CLAUDE_DOCKER_ADO_PROFILE=apg` added to the env file temporarily, then removed. Check:
+- [x] 6.4 Run `CLAUDE_DOCKER_OP_OPTIONAL=1 CLAUDE_DOCKER_ADO_APG_OP_REF='op://claude-docker/no-such-item/credential' cd-apg`. It must abort before launch, naming the variable. (b) In a normal `cd-apg` box, run `az devops configure --defaults organization=https://dev.azure.com/aamnld`, exit, then go to 6.5.
+- [x] 6.5 Regression: start `cd-ct` with `CLAUDE_DOCKER_ADO_PROFILE=apg` added to the env file temporarily, then removed. Check:
   - tag `ado`;
   - `az devops configure --list` shows the SBP defaults;
   - SBP repos clone;
   - no new warnings.
+
+## 7. Display label for the default box
+
+- [x] 7.1 `run.sh`: tag `ado:<profile>`, else `ado:<CLAUDE_DOCKER_ADO_LABEL>`, else `ado`; env-file loader skips the label key; help text. **Proof:** the tag expression gives `ado:apg` / `ado:ct` / `ado` for profile+label / label only / neither; `bash -n run.sh`.
+- [x] 7.2 `cd-ct`, `cd-ws13`: `export CLAUDE_DOCKER_ADO_LABEL=ct`. README line under "Named ADO profiles".
+- [ ] 7.3 Relaunch `cd-ct` from WSL. Check: tag `ado:ct`; `az devops configure --list` unchanged.

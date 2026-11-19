@@ -36,13 +36,13 @@ default leads back to SBP:
 - **Token probe per org.** Each org in the profile is probed.
 - **`--ado-admin` refused whenever a profile is set**, with or without `--ado`. The admin PAT is SBP's, and
   the customer profile has no admin variant.
-- **Statusline tag** `ado:<name>` instead of `ado`.
+- **Statusline tag** `ado:<name>` instead of `ado`. A default box can set a display-only `CLAUDE_DOCKER_ADO_LABEL`; `cd-ct` and `cd-ws13` use `ct`.
 - **`cd-apg`** gains `--ado` with profile `apg`, org `aamnld`.
 - **README**: profiles in the 1Password section, with the hand-over for
   placing the PAT.
 
-No profile set: `--ado` behaves exactly as today. `cd-ct` and `cd-ws13` do not
-change.
+No profile set: `--ado` behaves exactly as today. `cd-ct` and `cd-ws13` change
+only their tag label.
 
 Out of scope (deliberately):
 

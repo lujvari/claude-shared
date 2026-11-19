@@ -317,6 +317,9 @@ Environment:
   CLAUDE_DOCKER_ADO_ORG    Azure DevOps org(s), comma-separated, for that
                            check on --ado / --ado-admin (set by cd-ct,
                            cd-ws13). Unset: no ADO check.
+  CLAUDE_DOCKER_ADO_LABEL  Statusline label for a default --ado box, shown
+                           as ado:<label> (set by cd-ct, cd-ws13). Display
+                           only; launching env only; a profile ignores it.
   CLAUDE_DOCKER_ADO_PROFILE
                            Named ADO profile for --ado (set by cd-apg; read
                            from the launching env only, never the env file).
@@ -625,7 +628,7 @@ if [ -r "$CD_ENV_FILE" ]; then
       "$cd_line"|''|*[!A-Za-z0-9_]*) continue ;;              # no '=', empty, or non-identifier key
       # A launcher picks a box's ADO profile; one line here would quietly turn
       # every default --ado box (cd-ct, cd-ws13) into a profile box.
-      CLAUDE_DOCKER_ADO_PROFILE) continue ;;
+      CLAUDE_DOCKER_ADO_PROFILE|CLAUDE_DOCKER_ADO_LABEL) continue ;;
     esac
     if [ -n "${!cd_key:-}" ]; then continue; fi               # env wins over the file
     cd_val=${cd_line#*=}
@@ -1544,7 +1547,9 @@ DOCKER_FLAGS=()
 [ "$WITH_GLAB" = "1" ]     && DOCKER_FLAGS+=("glab")
 [ "$WITH_TFE" = "1" ]      && DOCKER_FLAGS+=("tfe")
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
-[ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado${ADO_PROFILE:+:$ADO_PROFILE}")
+# A profile tags itself; a default box may carry a display-only label.
+ADO_TAG=${ADO_PROFILE:-${CLAUDE_DOCKER_ADO_LABEL:-}}
+[ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado${ADO_TAG:+:$ADO_TAG}")
 [ "$WITH_ADO_ADMIN" = "1" ] && DOCKER_FLAGS+=("ado-admin")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")

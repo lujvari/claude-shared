@@ -21,4 +21,6 @@ set -euo pipefail
 cd_workspace "sbp/ct"
 # Org for run.sh's launch-time --ado token check (not a secret).
 export CLAUDE_DOCKER_ADO_ORG=sbp-controltower
+# Statusline tag ado:ct (display only).
+export CLAUDE_DOCKER_ADO_LABEL=ct
 exec "$CD_RUN" --claude-auth --ado --jira --sonar "$ws" "$@"

@@ -403,6 +403,7 @@ exec "$CD_RUN" --ado "$ws" "$@"
   - `CLAUDE_DOCKER_OP_OPTIONAL=1` does not apply;
   - `--ado-admin` is refused.
 - **Launcher only:** `CLAUDE_DOCKER_ADO_PROFILE` is ignored in the env file, so the file can never turn cd-ct into a profile box.
+- **Label for the default box:** `CLAUDE_DOCKER_ADO_LABEL=<label>` (launcher only, like the profile) changes a default box's tag to `ado:<label>` and nothing else. cd-ct and cd-ws13 set `ct`. A profile box ignores it.
 - **Probe:** one request per org, with each warning naming `--ado@<org>` when there are several orgs.
 - **Masking:** the box never sees the persisted `az devops` login and defaults, which belong to the default box.
 
