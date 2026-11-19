@@ -81,17 +81,25 @@ token_probe_all() {
 
   # ADO answers a bad credential with a 203 sign-in page unless told not to;
   # X-TFS-FedAuthRedirect: Suppress turns that into a 401.
-  if [ -n "${CLAUDE_DOCKER_ADO_ORG:-}" ]; then
-    _tp_ado_url="https://dev.azure.com/$CLAUDE_DOCKER_ADO_ORG/_apis/connectionData"
+  # CLAUDE_DOCKER_ADO_ORG may be a comma list (an ADO profile's orgs): one
+  # probe per org. With several, each probe is named ado@<org> so a warning
+  # says which org rejected the PAT; a single org keeps the plain ado name.
+  _tp_ado_orgs=${CLAUDE_DOCKER_ADO_ORG:-}
+  _tp_ado_orgs=${_tp_ado_orgs//,/ }
+  _tp_ado_multi=0
+  case $_tp_ado_orgs in *' '*) _tp_ado_multi=1 ;; esac
+  for _tp_org in $_tp_ado_orgs; do
+    _tp_ado_sfx=""; [ "$_tp_ado_multi" = "0" ] || _tp_ado_sfx="@$_tp_org"
+    _tp_ado_url="https://dev.azure.com/$_tp_org/_apis/connectionData"
     if [ "${WITH_ADO:-0}" = "1" ] && [ -n "${AZURE_DEVOPS_EXT_PAT:-}" ]; then
-      _tp_get ado url "$_tp_ado_url" user ":$AZURE_DEVOPS_EXT_PAT" \
+      _tp_get "ado$_tp_ado_sfx" url "$_tp_ado_url" user ":$AZURE_DEVOPS_EXT_PAT" \
         header "X-TFS-FedAuthRedirect: Suppress"
     fi
     if [ "${WITH_ADO_ADMIN:-0}" = "1" ] && [ -n "${AZURE_DEVOPS_ADMIN_PAT:-}" ]; then
-      _tp_get ado_admin url "$_tp_ado_url" user ":$AZURE_DEVOPS_ADMIN_PAT" \
+      _tp_get "ado_admin$_tp_ado_sfx" url "$_tp_ado_url" user ":$AZURE_DEVOPS_ADMIN_PAT" \
         header "X-TFS-FedAuthRedirect: Suppress"
     fi
-  fi
+  done
 
   if [ "${WITH_JIRA:-0}" = "1" ] && [ -n "${JIRA_API_TOKEN:-}" ] \
      && [ -n "${JIRA_BASE_URL:-}" ] && [ -n "${JIRA_USER_EMAIL:-}" ]; then
@@ -149,8 +157,11 @@ token_probe_all() {
     [ "$_tp_all" = "1" ] && _tp_warn --glab 401
   fi
 
-  _tp_check401 --ado ado
-  _tp_check401 --ado-admin ado_admin
+  for _tp_org in $_tp_ado_orgs; do
+    _tp_ado_sfx=""; [ "$_tp_ado_multi" = "0" ] || _tp_ado_sfx="@$_tp_org"
+    _tp_check401 "--ado$_tp_ado_sfx" "ado$_tp_ado_sfx"
+    _tp_check401 "--ado-admin$_tp_ado_sfx" "ado_admin$_tp_ado_sfx"
+  done
   _tp_check401 --jira jira
   _tp_check401 --supabase supabase
 

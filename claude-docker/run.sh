@@ -117,7 +117,9 @@ Wrapper flags:
                       and install a system-level git credential helper for
                       dev.azure.com (token read at auth time, never in the
                       URL) so in-container `git clone` against private Azure
-                      Repos works without prompting.
+                      Repos works without prompting. With
+                      CLAUDE_DOCKER_ADO_PROFILE set, uses that named profile
+                      instead: its own PAT and orgs, nothing from the default.
   --ado-admin         Opt in to an ELEVATED Azure DevOps PAT: forward
                       AZURE_DEVOPS_ADMIN_PAT alongside (not instead of)
                       --ado's AZURE_DEVOPS_EXT_PAT, for admin work such as
@@ -312,9 +314,18 @@ Environment:
                            each credential flag gets one identity request
                            (2 s cap, in parallel); a rejected token prints a
                            warning and the launch goes on. Offline: silent.
-  CLAUDE_DOCKER_ADO_ORG    Azure DevOps org for that check on --ado /
-                           --ado-admin (set by cd-ct, cd-ws13). Unset: no
-                           ADO check.
+  CLAUDE_DOCKER_ADO_ORG    Azure DevOps org(s), comma-separated, for that
+                           check on --ado / --ado-admin (set by cd-ct,
+                           cd-ws13). Unset: no ADO check.
+  CLAUDE_DOCKER_ADO_PROFILE
+                           Named ADO profile for --ado (set by cd-apg; read
+                           from the launching env only, never the env file).
+                           The PAT comes only from
+                           CLAUDE_DOCKER_ADO_<NAME>_OP_REF and the orgs from
+                           CLAUDE_DOCKER_ADO_<NAME>_ORGS (comma list); git
+                           offers the PAT to those orgs only. No fallback to
+                           the default PAT; anything missing aborts, even with
+                           CLAUDE_DOCKER_OP_OPTIONAL=1. --ado-admin is refused.
 
 Credentials are off by default; combine opt-ins as needed:
   claude-docker --aws --gh ~/repo
@@ -612,6 +623,9 @@ if [ -r "$CD_ENV_FILE" ]; then
     cd_key=${cd_line%%=*}
     case $cd_key in
       "$cd_line"|''|*[!A-Za-z0-9_]*) continue ;;              # no '=', empty, or non-identifier key
+      # A launcher picks a box's ADO profile; one line here would quietly turn
+      # every default --ado box (cd-ct, cd-ws13) into a profile box.
+      CLAUDE_DOCKER_ADO_PROFILE) continue ;;
     esac
     if [ -n "${!cd_key:-}" ]; then continue; fi               # env wins over the file
     cd_val=${cd_line#*=}
@@ -622,6 +636,16 @@ if [ -r "$CD_ENV_FILE" ]; then
     export "$cd_key=$cd_val"
   done < "$CD_ENV_FILE"
   unset cd_line cd_key cd_val
+fi
+
+# Named ADO profile (lib/ado-profile.sh). Resolved before ENV_VARS and before
+# any op call: it drops a host AZURE_DEVOPS_EXT_PAT before the forwarding loop
+# can pick it up, and a bad profile never reaches 1Password.
+# shellcheck source=lib/ado-profile.sh
+. "$SELF_DIR/lib/ado-profile.sh"
+ADO_PROFILE="" ADO_OP_REF_VAR="" ADO_OP_REF=""
+if [ "$WITH_ADO" = "1" ] || [ "$WITH_ADO_ADMIN" = "1" ]; then
+  ado_profile_resolve || exit 1
 fi
 
 ENV_VARS=()
@@ -940,7 +964,7 @@ op_bin_needed_for=""
     op_needed=1; op_needed_for="$op_needed_for --glab"
   fi
   if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
-     && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
+     && [ -n "$ADO_OP_REF" ]; then
     op_needed=1; op_needed_for="$op_needed_for --ado"
   fi
   if [ "$WITH_ADO_ADMIN" = "1" ] && [ -z "${AZURE_DEVOPS_ADMIN_PAT:-}" ]      && [ -n "${CLAUDE_DOCKER_ADO_ADMIN_OP_REF:-}" ]; then
@@ -1149,11 +1173,13 @@ fi
 # on-disk config to parse (ADO PATs typically live in a password manager,
 # not in a tool config), so the source is opt-in via env var pointing at
 # an op:// reference (e.g. CLAUDE_DOCKER_ADO_OP_REF="op://claude-docker/AzureDevOps PAT/credential").
+# Under a named profile ADO_OP_REF is the profile's own ref, and the host PAT
+# has already been dropped (lib/ado-profile.sh).
 # Fails closed, like the --gh op-ref above.
 if [ "$WITH_ADO" = "1" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ] \
-   && [ -n "${CLAUDE_DOCKER_ADO_OP_REF:-}" ]; then
+   && [ -n "$ADO_OP_REF" ]; then
   if command -v op >/dev/null 2>&1; then
-    ado_pat=$(op_read "$CLAUDE_DOCKER_ADO_OP_REF" || true)
+    ado_pat=$(op_read "$ADO_OP_REF" || true)
     if [ -n "$ado_pat" ]; then
       AZURE_DEVOPS_EXT_PAT="$ado_pat"
       export AZURE_DEVOPS_EXT_PAT
@@ -1518,7 +1544,7 @@ DOCKER_FLAGS=()
 [ "$WITH_GLAB" = "1" ]     && DOCKER_FLAGS+=("glab")
 [ "$WITH_TFE" = "1" ]      && DOCKER_FLAGS+=("tfe")
 [ "$WITH_TOFU" = "1" ]     && DOCKER_FLAGS+=("tofu")
-[ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado")
+[ "$WITH_ADO" = "1" ]      && DOCKER_FLAGS+=("ado${ADO_PROFILE:+:$ADO_PROFILE}")
 [ "$WITH_ADO_ADMIN" = "1" ] && DOCKER_FLAGS+=("ado-admin")
 [ "$WITH_JIRA" = "1" ]     && DOCKER_FLAGS+=("jira")
 [ "$WITH_SUPABASE" = "1" ] && DOCKER_FLAGS+=("supabase")
@@ -1695,6 +1721,13 @@ if [ "$EPHEMERAL" = "0" ]; then
   # op-ref.
   MOUNT_ARGS+=("--tmpfs" "/home/claude/.config/glab-cli:$TMPFS_USER_OPTS")
   [ "$WITH_TFE" = "0" ] && [ "$WITH_TOFU" = "0" ] && MOUNT_ARGS+=("--tmpfs" "/home/claude/.terraform.d:$TMPFS_USER_OPTS")
+  # az devops login/configure state (a PAT and the SBP default org/project)
+  # is visible only to default --ado boxes. On 2026-11-19 an SBP PAT was found
+  # here, readable from every box, client boxes included.
+  if [ "$WITH_ADO" = "0" ] || [ -n "$ADO_PROFILE" ]; then
+    MOUNT_ARGS+=("--tmpfs" "/home/claude/.azure/azuredevops:$TMPFS_USER_OPTS")
+    MOUNT_ARGS+=("--tmpfs" "/home/claude/.azure-devops:$TMPFS_USER_OPTS")
+  fi
   MOUNT_ARGS=(-v claude-code-root:/home/claude -v claude-code-home:/home/claude/.claude "${MOUNT_ARGS[@]}")
 fi
 
@@ -1760,6 +1793,13 @@ cred_require() {
 [ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_SECRET
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
 [ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
+
+# A profile box without its PAT never launches: CLAUDE_DOCKER_OP_OPTIONAL
+# would start it empty, and the next ADO call would go out unauthenticated.
+if [ -n "$ADO_PROFILE" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ]; then
+  echo "claude-docker: ADO profile '$ADO_PROFILE' got no PAT from $ADO_OP_REF_VAR. Aborting; CLAUDE_DOCKER_OP_OPTIONAL does not apply to ADO profiles." >&2
+  exit 1
+fi
 
 launch_blocked=0
 if [ -s "$OP_FAIL_LOG" ]; then

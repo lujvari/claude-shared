@@ -156,6 +156,26 @@ class TokenProbeTest(unittest.TestCase):
         self.run_probe({}, {"WITH_ADO": "1", "AZURE_DEVOPS_EXT_PAT": "x"})
         self.assertEqual(self.calls(), [])
 
+    def test_ado_probes_each_org(self):
+        env = {"WITH_ADO": "1", "AZURE_DEVOPS_EXT_PAT": "x",
+               "CLAUDE_DOCKER_ADO_ORG": "orga,orgb"}
+        stderr = self.run_probe({"/orgb/": {"code": "401"}}, env)
+        self.assertEqual(len(self.calls()), 2)
+        self.assertEqual(
+            stderr, "claude-docker: --ado@orgb token rejected (HTTP 401) - "
+            "rotate it on the host before relying on this box\n")
+        self.assertEqual(self.rejected, "ado@orgb")
+
+    def test_ado_each_org_quiet_on_200(self):
+        env = {"WITH_ADO": "1", "AZURE_DEVOPS_EXT_PAT": "x",
+               "CLAUDE_DOCKER_ADO_ORG": "orga,orgb"}
+        self.assertEqual(self.run_probe({}, env), "")
+        urls = sorted(c["stdin"].split('url = "')[1].split('"')[0]
+                      for c in self.calls())
+        self.assertEqual(urls, [
+            "https://dev.azure.com/orga/_apis/connectionData",
+            "https://dev.azure.com/orgb/_apis/connectionData"])
+
     def test_jira_skipped_without_base_url(self):
         self.run_probe({}, {"WITH_JIRA": "1", "JIRA_API_TOKEN": "x",
                             "JIRA_USER_EMAIL": "me@example.com"})

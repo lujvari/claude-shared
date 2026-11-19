@@ -8,7 +8,7 @@
 # mounts (as cd-asr does) once APG work spans more repos.
 #
 # --glab so the box pushes branches and opens MRs itself; apg-kb's push rules
-# are in its own CLAUDE.md.
+# are in its own CLAUDE.md. --ado reads the customer's repos (see below).
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "clients/apg"
@@ -17,4 +17,11 @@ cd_workspace "clients/apg"
 # helper offers the token to. run.sh derives neither (no glab-config parse).
 export GITLAB_HOST=sbp.gitlab.schubergphilis.com
 export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
-exec "$CD_RUN" --claude-auth --glab "$ws" "$@"
+
+# --ado on the customer's own Azure DevOps (org aamnld), as named profile apg:
+# its own read-only PAT, offered by git to aamnld URLs only. A profile never
+# falls back to the SBP PAT, and run.sh aborts if this one is missing.
+export CLAUDE_DOCKER_ADO_PROFILE=apg
+export CLAUDE_DOCKER_ADO_APG_OP_REF="${CLAUDE_DOCKER_ADO_APG_OP_REF:-op://claude-docker/AzureDevOps PAT APG/credential}"
+export CLAUDE_DOCKER_ADO_APG_ORGS=aamnld
+exec "$CD_RUN" --claude-auth --glab --ado "$ws" "$@"

@@ -583,6 +583,9 @@ RUN if [ "$(getent passwd 1000 | cut -d: -f1)" = ubuntu ]; then \
       /home/claude/.config/glab-cli \
       /home/claude/.aws \
       /home/claude/.terraform.d \
+      /home/claude/.azure \
+      /home/claude/.azure/azuredevops \
+      /home/claude/.azure-devops \
       /home/claude/.local \
       /home/claude/.local/bin \
       /home/claude/.venvs \
