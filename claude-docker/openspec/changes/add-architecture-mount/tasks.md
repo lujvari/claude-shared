@@ -31,4 +31,4 @@ If the real `run.sh` can't be driven with stubs in the box, say which step block
 
 - [x] 5.1 `openspec validate add-architecture-mount --strict` exits 0.
 - [x] 5.2 Commit to `main` and push.
-- [ ] 5.3 With the owner's OK, reply on bus message `20261121T184852Z-492a25`: what changed, the host checks in 4, and the pointer line each project's `CLAUDE.md` needs (for cd-dev). The owner decides when to close it.
+- [x] 5.3 With the owner's OK, reply on bus message `20261121T184852Z-492a25`: what changed, the host checks in 4, and the pointer line each project's `CLAUDE.md` needs (for cd-dev). The owner decides when to close it.
