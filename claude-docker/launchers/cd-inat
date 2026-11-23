@@ -8,7 +8,8 @@
 # Passing `+sbp/ai/kits` anyway is harmless: run.sh collapses a tree given
 # twice into one mount.
 #
-# Both live on sbp.gitlab, hence --glab.
+# Both live on sbp.gitlab, hence --glab. inat is moving to GitHub
+# (schubergphilis/inat), hence --gh, through its own profile (below).
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
 cd_workspace "sbp/ai/inat"; inat=$ws
@@ -17,4 +18,11 @@ cd_workspace "sbp/ai/kits"; kits=$ws
 # helper offers the token to. run.sh derives neither (no glab-config parse).
 export GITLAB_HOST=sbp.gitlab.schubergphilis.com
 export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
-exec "$CD_RUN" --claude-auth --glab "$inat" "$kits" "$@"
+
+# --gh as named profile inat: a fine-grained PAT for schubergphilis/inat only,
+# never the owner's personal token from the env file. run.sh drops any host
+# GH_TOKEN/GITHUB_TOKEN, offers the token to github.com only, and aborts if
+# the read fails.
+export CLAUDE_DOCKER_GITHUB_PROFILE=inat
+export CLAUDE_DOCKER_GITHUB_INAT_OP_REF="${CLAUDE_DOCKER_GITHUB_INAT_OP_REF:-op://claude-docker/inat-github-ro/credential}"
+exec "$CD_RUN" --claude-auth --glab --gh "$inat" "$kits" "$@"

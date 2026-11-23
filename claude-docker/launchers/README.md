@@ -97,6 +97,9 @@ Two rules:
   `~/.config/claude-docker/env`, which `run.sh` loads itself; see the comment
   above `CD_ENV_FILE` in `run.sh` for why that is not a shell rc. A launcher
   names *which* credentials to forward, never their values.
+  A box that needs a different credential from the default sets a named
+  profile and its `op://` ref, a pointer, not a value (`cd-apg` for ADO,
+  `cd-inat` for GitHub); `run.sh` then ignores the default sources.
 
 A launcher that brings up its project's test database (`cd-brain`, `cd-mep`)
 calls `cd_test_db_hold <container>` before the `up`, and ends with

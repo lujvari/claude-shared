@@ -33,7 +33,7 @@ claude-docker ~/repo -- --resume          # any claude flag after --
 | Flag         | Effect |
 |--------------|--------|
 | `--aws`      | Mount `~/.aws/config` + `~/.aws/sso` (:ro) so SSO profiles work. **No ambient `AWS_*` is forwarded** — an ambient static key outranks `AWS_PROFILE` in the credential chain and a forwarded `AWS_REGION` overrides every profile's region, so both would silently shadow explicit per-tenant `--profile`/`--region` selection (the "ASR command silently hit Aegon" bug). Static IAM keys instead become a **named profile**: `run.sh` collects them from host env (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`) or, when those are unset, from a 1P item via `CLAUDE_DOCKER_AWS_OP_REF` (e.g. `op://claude-docker/aegon-aws`; fields `access_key_id`, `secret_access_key` required, `session_token`/`region` optional), and `entrypoint.sh` writes them into `~/.aws/credentials` under the profile named by `CLAUDE_DOCKER_AWS_STATIC_PROFILE` (default `aegon`). Select a tenant explicitly with `--profile`; there is no silent default identity. |
-| `--gh`       | Forward `GH_TOKEN`/`GITHUB_TOKEN` **and** unmask in-container `gh auth login` state persisted in `claude-code-root`. Without this flag, `/home/claude/.config/gh/` is hidden by a tmpfs overlay so a prior login can't leak into a non-opted-in session. 1Password fallback: when neither `GH_TOKEN` nor `GITHUB_TOKEN` is set on the host and `CLAUDE_DOCKER_GITHUB_OP_REF` is an `op://` reference (e.g. `op://claude-docker/github-pat/credential`), `run.sh` runs `op read` to derive the token — same shape as `--ado`/`--jira`. Setting the ref makes 1Password **authoritative**: the `gh auth token` CLI fallback is skipped, so a stray host `gh` login can't shadow it (single source of truth). |
+| `--gh`       | Forward `GH_TOKEN`/`GITHUB_TOKEN` **and** unmask in-container `gh auth login` state persisted in `claude-code-root`. Without this flag, `/home/claude/.config/gh/` is hidden by a tmpfs overlay so a prior login can't leak into a non-opted-in session. 1Password fallback: when neither `GH_TOKEN` nor `GITHUB_TOKEN` is set on the host and `CLAUDE_DOCKER_GITHUB_OP_REF` is an `op://` reference (e.g. `op://claude-docker/github-pat/credential`), `run.sh` runs `op read` to derive the token — same shape as `--ado`/`--jira`. Setting the ref makes 1Password **authoritative**: the `gh auth token` CLI fallback is skipped, so a stray host `gh` login can't shadow it (single source of truth). With `CLAUDE_DOCKER_GITHUB_PROFILE` set, a named profile instead: its own token, `github.com` only, `gh` login masked (see "Named GitHub profiles"). |
 | `--glab`     | Forward `GITLAB_TOKEN`, sourced from the host env var or — when unset — from 1Password via `CLAUDE_DOCKER_GITLAB_OP_REF` (e.g. `op://claude-docker/gitlab-pat/credential`, `op read` on host). **No `glab-cli` config is mounted and no on-disk login is read** — GitLab auth is token-only. `/home/claude/.config/glab-cli/` is always tmpfs-masked so a stray in-container `glab auth login` can't persist and shadow the token. This deliberately forces the 1Password (or explicit env) path rather than silently reusing a stale on-disk glab login; without an op-ref or `GITLAB_TOKEN`, `--glab` has no GitLab auth. |
 | `--tfe`      | Mount `~/.terraform.d/credentials.tfrc.json` (:ro) when present and forward `TF_TOKEN_app_terraform_io`. Targets `app.terraform.io` (HCP Terraform) only — self-hosted Terraform Enterprise hostnames and other `TF_TOKEN_<host>` variables are out of scope. Without the flag *and* without `--tofu`, `/home/claude/.terraform.d/` is hidden by a tmpfs overlay so a prior in-container `terraform login` can't leak. See [Terraform Cloud workflow](#terraform-cloud-workflow). |
 | `--tofu`     | Mount `~/.tofurc` (:ro) when present — OpenTofu's CLI config file. Also mounts the shared `~/.terraform.d/credentials.tfrc.json` (:ro) and forwards `TF_TOKEN_app_terraform_io`, exactly like `--tfe`, because `tofu login app.terraform.io` writes the same file `terraform login` does. The same `/home/claude/.terraform.d/` tmpfs guard applies — masked only when *both* `--tfe` and `--tofu` are off. `/home/claude/.tofurc` is **not** masked when the flag is off (it's CLI config, not credentials — see [Threat model](#threat-model)). Composes freely with `--tfe`. See [Terraform Cloud workflow](#terraform-cloud-workflow). |
@@ -413,6 +413,27 @@ exec "$CD_RUN" --ado "$ws" "$@"
 2. Store it in 1Password at the item and field the launcher's op-ref names, e.g. vault `claude-docker`, item `AzureDevOps PAT APG`, field `credential`.
 3. Check it is readable without printing it: `op read "<ref>" | wc -c`.
 4. Relaunch the box.
+
+#### Named GitHub profiles (a box that must not hold your own token)
+
+`--gh` defaults to one token, normally your personal one. A box that works on
+someone else's repos, such as `cd-inat` on `schubergphilis/inat`, uses a named
+profile set by its launcher, so that box never holds the personal token:
+
+```bash
+# in the launcher (cd-inat)
+export CLAUDE_DOCKER_GITHUB_PROFILE=inat
+export CLAUDE_DOCKER_GITHUB_INAT_OP_REF="op://claude-docker/inat-github-ro/credential"
+exec "$CD_RUN" --gh "$ws" "$@"
+```
+
+- **Token:** only from `CLAUDE_DOCKER_GITHUB_<NAME>_OP_REF`, forwarded as `GH_TOKEN`. A host `GH_TOKEN` or `GITHUB_TOKEN` (shell or env file), `CLAUDE_DOCKER_GITHUB_OP_REF` and the host `gh` login are ignored.
+- **git:** the credential helper is set up for `github.com` only, whatever the host's gh config lists.
+- **Masking:** the box never sees the `gh` login persisted on `claude-code-root`, which belongs to the default `--gh` boxes.
+- **Fails closed, with no escape hatch:** a missing op-ref or a failed read aborts the launch; `CLAUDE_DOCKER_OP_OPTIONAL=1` does not apply.
+- **Launcher only:** `CLAUDE_DOCKER_GITHUB_PROFILE` is ignored in the env file. The profile's own op-ref may sit there, overriding the launcher's default.
+
+Placing the token works as for an ADO profile: a fine-grained PAT scoped to the repos the box needs, stored at the item and field the op-ref names.
 
 #### A flag that resolves to nothing aborts the launch
 

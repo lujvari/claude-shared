@@ -92,7 +92,9 @@ Wrapper flags:
                       unmask in-container gh login state. When neither is
                       set, 1Password fallback via CLAUDE_DOCKER_GITHUB_OP_REF
                       (`op read` on host); setting the ref makes 1Password
-                      authoritative and skips the gh-login fallback.
+                      authoritative and skips the gh-login fallback. With
+                      CLAUDE_DOCKER_GITHUB_PROFILE set, uses that named
+                      profile instead: its own token, nothing from the default.
   --glab              Opt in to GitLab: forward GITLAB_TOKEN, sourced from
                       the host env var or, when unset, 1Password via
                       CLAUDE_DOCKER_GITLAB_OP_REF (`op read` on host). No
@@ -329,6 +331,15 @@ Environment:
                            offers the PAT to those orgs only. No fallback to
                            the default PAT; anything missing aborts, even with
                            CLAUDE_DOCKER_OP_OPTIONAL=1. --ado-admin is refused.
+  CLAUDE_DOCKER_GITHUB_PROFILE
+                           Named GitHub profile for --gh (set by cd-inat; read
+                           from the launching env only, never the env file).
+                           The token comes only from
+                           CLAUDE_DOCKER_GITHUB_<NAME>_OP_REF; a host
+                           GH_TOKEN/GITHUB_TOKEN is dropped, git offers the
+                           token to github.com only and the stored gh login
+                           stays masked. Anything missing aborts, even with
+                           CLAUDE_DOCKER_OP_OPTIONAL=1.
 
 Credentials are off by default; combine opt-ins as needed:
   claude-docker --aws --gh ~/repo
@@ -629,6 +640,8 @@ if [ -r "$CD_ENV_FILE" ]; then
       # A launcher picks a box's ADO profile; one line here would quietly turn
       # every default --ado box (cd-ct, cd-ws13) into a profile box.
       CLAUDE_DOCKER_ADO_PROFILE|CLAUDE_DOCKER_ADO_LABEL) continue ;;
+      # Same for GitHub: the file must never turn a --gh box into a profile box.
+      CLAUDE_DOCKER_GITHUB_PROFILE) continue ;;
     esac
     if [ -n "${!cd_key:-}" ]; then continue; fi               # env wins over the file
     cd_val=${cd_line#*=}
@@ -650,6 +663,12 @@ ADO_PROFILE="" ADO_OP_REF_VAR="" ADO_OP_REF=""
 if [ "$WITH_ADO" = "1" ] || [ "$WITH_ADO_ADMIN" = "1" ]; then
   ado_profile_resolve || exit 1
 fi
+# Named GitHub profile (lib/gh-profile.sh), resolved here for the same
+# reasons: it drops a host GH_TOKEN/GITHUB_TOKEN (shell or env file) and
+# swaps in the profile's op-ref before anything forwards or reads them.
+# shellcheck source=lib/gh-profile.sh
+. "$SELF_DIR/lib/gh-profile.sh"
+gh_profile_resolve || exit 1
 
 ENV_VARS=()
 [ "$WITH_GH" = "1" ]   && ENV_VARS+=(GH_TOKEN GITHUB_TOKEN)
@@ -1719,7 +1738,11 @@ if [ "$EPHEMERAL" = "0" ]; then
   # so either flag is sufficient consent to expose it.
   # The masks are owned by the box user: a bare tmpfs is root 0755, and gh or
   # glab writing its first config there would fail with EACCES.
-  [ "$WITH_GH" = "0" ]   && MOUNT_ARGS+=("--tmpfs" "/home/claude/.config/gh:$TMPFS_USER_OPTS")
+  # A GitHub profile box is masked too: the stored login is the default
+  # box's, and gh's git helper would fall back to it.
+  if [ "$WITH_GH" = "0" ] || [ -n "$GH_PROFILE" ]; then
+    MOUNT_ARGS+=("--tmpfs" "/home/claude/.config/gh:$TMPFS_USER_OPTS")
+  fi
   # glab-cli is ALWAYS masked (not gated on --glab): --glab no longer mounts
   # the host config and GitLab auth is GITLAB_TOKEN-only, so no persisted
   # in-container glab login may ever act as a credential source or shadow the
@@ -1803,6 +1826,10 @@ cred_require() {
 # would start it empty, and the next ADO call would go out unauthenticated.
 if [ -n "$ADO_PROFILE" ] && [ -z "${AZURE_DEVOPS_EXT_PAT:-}" ]; then
   echo "claude-docker: ADO profile '$ADO_PROFILE' got no PAT from $ADO_OP_REF_VAR. Aborting; CLAUDE_DOCKER_OP_OPTIONAL does not apply to ADO profiles." >&2
+  exit 1
+fi
+if [ -n "$GH_PROFILE" ] && [ -z "${GH_TOKEN:-}" ]; then
+  echo "claude-docker: GitHub profile '$GH_PROFILE' got no token from $GH_OP_REF_VAR. Aborting; CLAUDE_DOCKER_OP_OPTIONAL does not apply to GitHub profiles." >&2
   exit 1
 fi
 
