@@ -1,4 +1,3 @@
 # Open items
 
-- **Bus hand-over `20261120T085701Z-d9ee4a` (agent-autonomy items 1-8) waits on the host.** All eight items are handled; the last host step is merging the three `Read(...)` allow rules from `claude-docker/examples/settings.docker.json` into the host's live `~/.claude/settings.docker.json` (asked in `20261123T091154Z-8b42c3`). When the host confirms, close d9ee4a with `bus.py done`.
 - **Bus proposal `20261122T193721Z-8f9b16` (localhost dev-server proofs in unattended runs) is parked under Gate 0**: two strikes so far. A dev-root session adds a pain-log line to `PORTFOLIO.md`, e.g. "execute-run guard blocks localhost dev-server proofs (npm/wrangler dev + curl localhost); pushed to review-run twice". Build it (kits run-guard or prepare-run) only on a third strike; then close 8f9b16.
