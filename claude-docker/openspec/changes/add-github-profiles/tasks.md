@@ -39,4 +39,4 @@ Scratch dev tree: copy of `claude-docker/` (run.sh, lib/, launchers/), `sbp/ai/i
 - [x] 6.1 `openspec validate add-github-profiles --strict` exits 0.
 - [x] 6.2 `/simplify` on the diff (rigor Gate 8).
 - [x] 6.3 Commit to `main` and push.
-- [ ] 6.4 With the owner's OK, reply on bus message `20261123T094235Z-98797a`: what changed, relaunch `cd-inat`, the checks in 5. The owner decides when to close it.
+- [x] 6.4 With the owner's OK, reply on bus message `20261123T094235Z-98797a`: what changed, relaunch `cd-inat`, the checks in 5. The owner decides when to close it.
