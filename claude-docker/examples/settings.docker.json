@@ -8,6 +8,11 @@
   "model": "opus[1m]",
   "teammateMode": "tmux",
   "permissions": {
+    "allow": [
+      "Read(~/.claude/skills/**)",
+      "Read(~/.inat/rules/**)",
+      "Read(~/.claude/CLAUDE.md)"
+    ],
     "deny": [
       "Read(//**/.env)",
       "Read(//**/.env.local)",
