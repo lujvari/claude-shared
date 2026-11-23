@@ -6,7 +6,9 @@
 # its backups, so add it per session for infra work (`cd-mep --hetzner-infra`).
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
-cd_workspace "myEntryPoint"
+# The architecture model rides along second; see README.md (multi-workspace).
+cd_workspace "myEntryPoint";       mep=$ws
+cd_workspace "laslo/architecture"; arch=$ws
 
 # myentrypoint-test-postgres: MEP's own disposable test database, defined in
 # myEntryPoint/compose.test.yml (loopback 47304; boxes reach it at
@@ -23,7 +25,7 @@ cd_workspace "myEntryPoint"
 # port frees (later `up --wait` calls are no-ops). So check the publication,
 # recreate once if it's missing, and warn only if that doesn't fix it.
 mep_test_db() {
-  ( cd "$ws" && op run --env-file=compose.test.env -- \
+  ( cd "$mep" && op run --env-file=compose.test.env -- \
       docker compose -f compose.test.yml up -d --wait "$@" ) 2>&1 9>&-
 }
 mep_test_db_published() {
@@ -37,4 +39,4 @@ elif ! mep_test_db_published; then
   mep_test_db_warn "127.0.0.1:47304 not published (port in use?)"
 fi
 
-cd_test_db_run myentrypoint-test-postgres --claude-auth --gh --mepdb "$ws" "$@"
+cd_test_db_run myentrypoint-test-postgres --claude-auth --gh --mepdb "$mep" "$arch" "$@"

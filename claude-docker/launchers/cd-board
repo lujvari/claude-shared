@@ -5,5 +5,7 @@
 # secret put, deploy) runs on the owner's WSL shell, never in the box.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
-cd_workspace "laslo/family-board"
-exec "$CD_RUN" --claude-auth --gh "$ws" "$@"
+# The architecture model rides along second; see README.md (multi-workspace).
+cd_workspace "laslo/family-board"; board=$ws
+cd_workspace "laslo/architecture"; arch=$ws
+exec "$CD_RUN" --claude-auth --gh "$board" "$arch" "$@"

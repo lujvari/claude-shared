@@ -108,10 +108,18 @@ sessions, so a host-side test run brings its own up. The mechanism (a shared
 `flock`) is documented in `_lib.sh`.
 
 Work that spans several trees calls `cd_workspace` once per tree and passes
-them all; the first becomes the box's working directory (see `cd-asr`,
-`cd-inat`). A tree passed twice — a launcher default plus a `+PATH` naming it
-again — is mounted once; two *different* trees with the same basename still
+them all, keeping each path in a named variable; the first becomes the box's
+working directory and sets its mailbox and venv keys (see `cd-asr`,
+`cd-inat`, `cd-tools`). A tree passed twice — a launcher default plus a
+`+PATH` naming it again — is mounted once; two *different* trees with the same basename still
 fail run.sh's collision check.
+
+`cd-mep`, `cd-brain` and `cd-board` mount `laslo/architecture`, the LikeC4
+model of those three services, second: a session that changes an
+integration, data store, MCP connection or deployment there updates the
+model too. Up to three boxes then share that one checkout, so commit model
+edits by path, never `git add -A` (see "Concurrent Claude sessions on one
+checkout" in the main README).
 
 The dev root is derived in `_lib.sh` from the checkout's own location, four
 levels above this directory — nothing to configure when the clone moves.

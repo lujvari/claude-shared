@@ -6,7 +6,9 @@
 # Cloudflare credentials only for the deploy phase.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
-cd_workspace "laslo/brain"
+# The architecture model rides along second; see README.md (multi-workspace).
+cd_workspace "laslo/brain";        brain=$ws
+cd_workspace "laslo/architecture"; arch=$ws
 
 # brain-test-postgres: Brain's own disposable test database, defined in
 # laslo/brain/compose.test.yml (loopback 47401; boxes reach it at
@@ -22,7 +24,7 @@ cd_workspace "laslo/brain"
 # port frees (later `up --wait` calls are no-ops). So check the publication,
 # recreate once if it's missing, and abort if that doesn't fix it.
 brain_test_db() {
-  ( cd "$ws" && op run --env-file=.env.test -- \
+  ( cd "$brain" && op run --env-file=.env.test -- \
       docker compose -f compose.test.yml up -d --wait "$@" ) >&2 9>&-
 }
 brain_test_db_published() {
@@ -39,4 +41,4 @@ if ! brain_test_db_published; then
   fi
 fi
 
-cd_test_db_run brain-test-postgres --claude-auth --gh --braindb "$ws" "$@"
+cd_test_db_run brain-test-postgres --claude-auth --gh --braindb "$brain" "$arch" "$@"
