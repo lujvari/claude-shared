@@ -58,6 +58,7 @@ fi
 # a named profile so tenants are selected explicitly with --profile and there
 # is no silent default identity. ~/.aws/config is bind-mounted :ro; the parent
 # dir and ~/.aws/credentials are ours to write (run.sh never mounts creds).
+# ~/.aws is a per-box tmpfs in a volume box, so the file dies with the box.
 # Transport vars are unset afterwards so the secret does not linger in the
 # environment `exec`'d into claude.
 if [ -n "${CLAUDE_DOCKER_AWS_STATIC_KEY_ID:-}" ] \

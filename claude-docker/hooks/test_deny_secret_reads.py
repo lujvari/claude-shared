@@ -71,8 +71,24 @@ class BashFiles(Cases):
             "grep -e TOKEN ~/.zshrc", "grep -A 3 TOKEN ~/.profile",
             "awk '{print}' .env", "xxd ~/.netrc", "diff ~/.bashrc ~/.bashrc.orig",
             "cat 'C:\\Users\\me\\.aws\\credentials'", "cat ~/.config/ai-transcribe/api-key",
-            "cat ~/.envrc",
+            "cat ~/.envrc", "cat ~/.azure/azuredevops/personalAccessTokens",
         ], "file")
+
+    def test_git_credential_dump(self):
+        self.deny(bash, [
+            "printf 'protocol=https\\nhost=github.com\\n' | git credential fill",
+            "echo host=github.com | git -C /repo credential fill",
+            "git -c credential.helper=store credential fill < req",
+            "git credential-store get", "git-credential-store get",
+            "/usr/lib/git-core/git-credential-cache get",
+            "bash -c 'git credential fill'",
+        ], "file")
+        self.allow(bash, [
+            "git credential approve < req", "git credential reject < req",
+            "git config --get credential.helper", "git config credential.helper store",
+            "git credential fill | sed -E 's/=.*/=<redacted>/'",
+            "git log --grep credential",
+        ])
 
     def test_input_redirect(self):
         self.deny(bash, ["while read l; do echo \"$l\"; done < ~/.bashrc", "tr a b < .env"])
@@ -197,7 +213,8 @@ class PowerShell(Cases):
             "cat $env:APPDATA\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt",
             "Get-Content .env | Select-Object -First 5",
             "rg TOKEN ~/.bashrc", "wsl -e bash -c 'cat ~/.bashrc'",
-            "bash -c 'cat ~/.netrc'",
+            "bash -c 'cat ~/.netrc'", "git credential fill",
+            "git.exe credential-manager get",
         ], "file")
 
     def test_env(self):

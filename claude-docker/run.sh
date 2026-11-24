@@ -584,6 +584,8 @@ fi
 # the container under CLAUDE_DOCKER_AWS_STATIC_* transport vars, which
 # entrypoint.sh writes into ~/.aws/credentials as a named profile — see the
 # --aws static-credential block further down.
+# ~/.aws itself is a per-box tmpfs (mask block below), so those keys never
+# reach the shared claude-code-root volume.
 if [ "$WITH_AWS" = "1" ]; then
   [ -f "$HOME/.aws/config" ] && MOUNT_ARGS+=("-v" "$HOME/.aws/config:/home/claude/.aws/config:ro")
   [ -d "$HOME/.aws/sso" ]    && MOUNT_ARGS+=("-v" "$HOME/.aws/sso:/home/claude/.aws/sso:ro")
@@ -1756,6 +1758,11 @@ if [ "$EPHEMERAL" = "0" ]; then
     MOUNT_ARGS+=("--tmpfs" "/home/claude/.azure/azuredevops:$TMPFS_USER_OPTS")
     MOUNT_ARGS+=("--tmpfs" "/home/claude/.azure-devops:$TMPFS_USER_OPTS")
   fi
+  # ~/.aws is ALWAYS masked: the entrypoint writes --aws static keys to
+  # ~/.aws/credentials, which on the volume outlived the box. On 2026-11-24 an
+  # Aegon key was found there, readable from every box. Under --aws the :ro
+  # config/sso binds (deeper paths) are mounted on top of this tmpfs.
+  MOUNT_ARGS+=("--tmpfs" "/home/claude/.aws:$TMPFS_USER_OPTS")
   MOUNT_ARGS=(-v claude-code-root:/home/claude -v claude-code-home:/home/claude/.claude "${MOUNT_ARGS[@]}")
 fi
 

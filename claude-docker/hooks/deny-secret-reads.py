@@ -9,6 +9,7 @@ pipelines would print
     credential files, the op/ and claude-docker env files, SSH private keys,
     /proc/*/environ, backups of any of these), or a recursive grep over a tree
     that holds them (~, ~/.config, ~/.aws, ...), or
+  * a stored git credential (`git credential fill`, a helper's `get`), or
   * the process environment (`env`, `printenv`, `export -p`, `gci env:`) or a
     secret-named variable (`echo $GH_TOKEN`, `$env:GH_TOKEN`),
 
@@ -50,7 +51,7 @@ SECRET_BASENAMES = {
 SECRET_SUFFIXES = (
     "/.aws/credentials", "/.config/gh/hosts.yml", "/.config/glab-cli/config.yml",
     "/.docker/config.json", "/.kube/config", "/claude-docker/env",
-    "/.config/ai-transcribe/api-key",
+    "/.config/ai-transcribe/api-key", "/.azure/azuredevops/personalaccesstokens",
 )
 SECRET_DIRS = ("/.config/op/",)
 SECRET_NAME_RE = re.compile(
@@ -294,6 +295,28 @@ def is_redaction(cmd: dict) -> bool:
     return False
 
 
+GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace"}
+
+
+def is_credential_dump(name: str, args: list) -> bool:
+    """`git credential fill`, or a credential helper asked to `get`: both print
+    the stored username and password."""
+    name = name.removesuffix(".exe")
+    if name.startswith("git-credential-"):
+        return "get" in args
+    if name != "git":
+        return False
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in GIT_VALUE_OPTS else 1
+    if i >= len(args):
+        return False
+    sub, rest = args[i], args[i + 1:]
+    if sub == "credential":
+        return "fill" in rest
+    return sub.startswith("credential-") and "get" in rest
+
+
 def is_env_dump(argv: list) -> bool:
     name, args = base(argv[0]), argv[1:]
     if name == "env":
@@ -333,6 +356,8 @@ def bash_reason(cmd: str, depth: int = 0):
                 recursive = name == "rg" or short_flags(args) & set("rR") or "--recursive" in args
                 if name in GREPS and recursive and any(is_secret_tree(f) for f in files):
                     hit = hit or "file"
+            if is_credential_dump(name, args):
+                hit = hit or "file"
             if is_env_dump(argv):
                 hit = hit or "env"
         if hit and not any(is_redaction(c) for c in pipe):
@@ -415,6 +440,8 @@ def ps_reason(cmd: str, depth: int = 0):
             name, args = toks[0].lower(), toks[1:]
             if name in PS_READERS and ps_reader_hit(name, args):
                 hit = hit or "file"
+            if is_credential_dump(base(name), [t.strip("'\"") for t in args]):
+                hit = hit or "file"
             elif base(name) in READERS | SHELLS | POWERSHELLS | WRAPPERS:
                 # a native tool (rg, wsl, bash -c) called from PowerShell
                 inner = [t.strip("'\"") for t in toks]
@@ -442,7 +469,8 @@ REASON = {
             "plaintext (a shell rc or history file, .env, .netrc, .pgpass, a "
             "git/gh/glab/docker/kube/npm credential file, an op/ or claude-docker "
             "env file, a private key, a backup of one, or a recursive grep over "
-            "a directory that holds them)",
+            "a directory that holds them), or a stored git credential (`git "
+            "credential fill`, a credential helper's `get`)",
     "env": "this would print the process environment or a secret-named variable",
 }
 SAFE_FORMS = (
