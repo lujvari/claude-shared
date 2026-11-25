@@ -3,9 +3,7 @@
 ## Purpose
 
 Provide `gh`, `glab`, and AWS CLI v2 inside the container with minimal re-auth friction, using host credential passthrough where the tool's macOS storage is file-based and in-container persistence otherwise.
-
 ## Requirements
-
 ### Requirement: gh, glab, aws v2 installed
 
 The container image SHALL ship with `gh`, `glab`, and `aws` (v2) on the default PATH, built arch-aware for both `amd64` and `arm64`.
@@ -22,9 +20,9 @@ The container image SHALL ship with `gh`, `glab`, and `aws` (v2) on the default 
 
 ### Requirement: Credentials opt-in
 
-> **Superseded in part (2026-09-23, `add-credential-fail-closed`):** every clause below saying `run.sh` continues silently when a token can't be resolved no longer holds. A credential flag that ends up without its credential now aborts the launch unless `CLAUDE_DOCKER_OP_OPTIONAL=1`. Silence about absent mounts is unaffected.
-
 Host credentials (files or env vars) SHALL NOT reach the container unless the user explicitly opts in per-run. `run.sh` defaults to no credential mounts and no token env forwarding. Opt-ins are granted via dedicated flags:
+
+> **Superseded in part (2026-09-23, `add-credential-fail-closed`):** every clause below saying `run.sh` continues silently when a token can't be resolved no longer holds. A credential flag that ends up without its credential now aborts the launch unless `CLAUDE_DOCKER_OP_OPTIONAL=1`. Silence about absent mounts is unaffected.
 
 - `--aws`: mount `~/.aws/config` at `/root/.aws/config:ro` and, when present, `~/.aws/sso/` at `/root/.aws/sso:ro`; forward `AWS_PROFILE`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when set on the host.
 - `--gh`: forward `GH_TOKEN` or `GITHUB_TOKEN` when set on the host. If neither
@@ -116,3 +114,52 @@ Because macOS `gh` uses the Keychain (no host file to mount), the container SHAL
 - **WHEN** user runs `claude-docker ~/repo` without `--glab`
 - **THEN** `glab auth status` inside the container reports no authenticated host
 - **AND** `/root/.config/glab-cli/` inside the container is empty
+
+### Requirement: CIS credential opt-in
+
+`run.sh` SHALL forward `CIS_API_KEY` into the container only when the user passes `--cis`, and only when non-empty. It SHALL come from the host environment when set there; otherwise, when `CLAUDE_DOCKER_CIS_OP_REF` names an `op://` reference, `run.sh` SHALL resolve it with `op read` on the host. There SHALL be no built-in default reference and no bind mount. When the flag is set, `run.sh` SHALL add `cis` to `CLAUDE_DOCKER_FLAGS`. When the flag is set and `CIS_API_KEY` is still empty, or the `op read` failed, `run.sh` SHALL abort before `docker run` unless `CLAUDE_DOCKER_OP_OPTIONAL=1` is set.
+
+#### Scenario: Key is read from 1Password when unset on the host
+
+- **GIVEN** `CIS_API_KEY` is not set on the host
+- **AND** `CLAUDE_DOCKER_CIS_OP_REF=op://<vault>/<item>/<field>` names a readable item
+- **WHEN** the user runs `claude-docker --cis ~/repo`
+- **THEN** `CIS_API_KEY` inside the container is non-empty
+- **AND** `CLAUDE_DOCKER_FLAGS` contains `cis`
+
+#### Scenario: No flag, no key
+
+- **GIVEN** `CIS_API_KEY` is exported on the host
+- **WHEN** the user runs `claude-docker ~/repo` without `--cis`
+- **THEN** `CIS_API_KEY` is not set inside the container
+
+#### Scenario: Unresolved key aborts
+
+- **GIVEN** `CIS_API_KEY` and `CLAUDE_DOCKER_CIS_OP_REF` are unset on the host
+- **AND** `CLAUDE_DOCKER_OP_OPTIONAL` is not `1`
+- **WHEN** the user runs `claude-docker --cis ~/repo`
+- **THEN** `run.sh` names `--cis` on stderr and exits non-zero without starting a container
+
+### Requirement: npm feed credential derived from the ADO PAT
+
+When the user passes `--npm-feed`, `run.sh` SHALL set `NPM_FEED_PASSWORD` in the container to the base64 encoding, without line breaks, of the `AZURE_DEVOPS_EXT_PAT` the box receives. `--npm-feed` without `--ado` SHALL abort before `docker run` with an error naming both flags. Without `--npm-feed`, `NPM_FEED_PASSWORD` SHALL NOT be set in the container, even when the host has it. When the flag is set, `run.sh` SHALL add `npm-feed` to `CLAUDE_DOCKER_FLAGS`.
+
+#### Scenario: Feed credential reaches a CT box
+
+- **GIVEN** `~/.npmrc` sets the feed's `_password` to `${NPM_FEED_PASSWORD}`
+- **AND** the `--ado` PAT has Packaging (Read) on the feed
+- **WHEN** the user runs `cd-ct`
+- **THEN** `npm view` of a package on the feed succeeds inside the box
+- **AND** `CLAUDE_DOCKER_FLAGS` contains `npm-feed`
+
+#### Scenario: No flag, no feed credential
+
+- **WHEN** the user runs `claude-docker --ado ~/repo` without `--npm-feed`
+- **THEN** `NPM_FEED_PASSWORD` is not set inside the container
+- **AND** `npm view left-pad version` still succeeds
+
+#### Scenario: Flag without --ado aborts
+
+- **WHEN** the user runs `claude-docker --npm-feed ~/repo`
+- **THEN** `run.sh` names `--npm-feed` and `--ado` on stderr and exits non-zero without starting a container
+

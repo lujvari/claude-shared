@@ -8,5 +8,5 @@
 ## 2. Host (owner)
 
 - [x] 2.1 Both `_password` values in `~/.npmrc` are `${NPM_FEED_PASSWORD}`.
-- [ ] 2.2 Remove the v1 leftovers: the `ct-npm-feed` 1Password item (expired PAT) and the `CLAUDE_DOCKER_NPM_FEED_OP_REF` line in the host env file.
-- [ ] 2.3 In `cd-ct`, `npm view @achrinza/node-ipc version` succeeds; in a box without the flag, `npm view left-pad version` still works.
+- [x] 2.2 Remove the v1 leftovers: the `ct-npm-feed` 1Password item (expired PAT) and the `CLAUDE_DOCKER_NPM_FEED_OP_REF` line in the host env file.
+- [x] 2.3 In `cd-ct`, `npm view @achrinza/node-ipc version` succeeds; in a box without the flag, `npm view left-pad version` still works.

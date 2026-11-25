@@ -9,4 +9,4 @@
 
 - [x] 2.1 Store the key in 1Password; set `CLAUDE_DOCKER_CIS_OP_REF` in the host env file.
 - [x] 2.2 Change the `cis-local` env in `~/.claude.json` to `"${CIS_API_KEY}"`, and the Supabase one to `"${SUPABASE_ACCESS_TOKEN}"`.
-- [ ] 2.3 `cd-cis`: `/mcp` shows `cis-local` connected; a box without `--cis` shows no literal key in `~/.claude.json` (`grep -c CIS_API_KEY` finds only the reference).
+- [x] 2.3 `cd-cis`: `/mcp` shows `cis-local` connected; a box without `--cis` shows no literal key in `~/.claude.json` (`grep -c CIS_API_KEY` finds only the reference).
