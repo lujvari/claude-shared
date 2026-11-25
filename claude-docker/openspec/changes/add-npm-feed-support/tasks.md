@@ -7,6 +7,6 @@
 
 ## 2. Host (owner)
 
-- [ ] 2.1 Store the current `_password` value (base64 PAT) in 1Password; set `CLAUDE_DOCKER_NPM_FEED_OP_REF` in the host env file.
-- [ ] 2.2 Replace both `_password` values in `~/.npmrc` with `${NPM_FEED_PASSWORD}`.
+- [x] 2.1 Store the current `_password` value (base64 PAT) in 1Password; set `CLAUDE_DOCKER_NPM_FEED_OP_REF` in the host env file.
+- [x] 2.2 Replace both `_password` values in `~/.npmrc` with `${NPM_FEED_PASSWORD}`.
 - [ ] 2.3 In `cd-ct`, `npm view` of an SBP.Core.UI package succeeds; in a box without the flag, `npm view left-pad version` still works.
