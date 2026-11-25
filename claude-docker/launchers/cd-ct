@@ -23,4 +23,5 @@ cd_workspace "sbp/ct"
 export CLAUDE_DOCKER_ADO_ORG=sbp-controltower
 # Statusline tag ado:ct (display only).
 export CLAUDE_DOCKER_ADO_LABEL=ct
-exec "$CD_RUN" --claude-auth --ado --jira --sonar "$ws" "$@"
+# --npm-feed: NPM_FEED_PASSWORD for the SBP.Core.UI feed in ~/.npmrc.
+exec "$CD_RUN" --claude-auth --ado --jira --sonar --npm-feed "$ws" "$@"
