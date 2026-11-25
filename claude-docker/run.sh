@@ -210,6 +210,10 @@ Wrapper flags:
                       Set it to "" to switch the 1Password path off. Not the
                       myEntryPoint "brain" database --mepdb names: Brain has
                       its own disposable container, brain-test-postgres.
+                      The box joins that container's docker network and its
+                      DSN is rewritten to brain-test-postgres:5432, so the
+                      container must be running at launch (cd-brain starts
+                      it). Cannot combine with --host-net.
   --brain             Opt in to the remote Brain MCP (brain.karansjet.dev,
                       behind Cloudflare Access): forward
                       BRAIN_CF_ACCESS_CLIENT_ID / _SECRET and seed a
@@ -1829,6 +1833,46 @@ fi
 # docker-run-options array (it carries the --tmpfs masks), so the always-
 # non-empty expansion below stays bash-3.2 / set -u safe.
 [ -n "$NETWORK" ] && MOUNT_ARGS+=("--network" "$NETWORK")
+
+# --braindb: sit on brain-test-postgres's own network and talk to it container
+# to container. Docker Desktop's host.docker.internal:47401 forward drops
+# connects under the suite's load (11-60 s stalls, asyncpg TimeoutError,
+# measured 2026-11-25). The network is read off the running container, not
+# derived from the compose project name. Only the in-box copy of the DSN
+# changes: host-side tests keep 127.0.0.1:47401. Every failure aborts; a box
+# silently left on the forward would just bring the flake back. Messages never
+# carry the DSN, it holds the password.
+braindb_dsn_in_box() {
+  local scheme rest authority userinfo=
+  case $1 in *://*) ;; *) return 1 ;; esac
+  scheme=${1%%://*}
+  rest=${1#*://}
+  authority=${rest%%[/?]*}
+  case $authority in *@*) userinfo="${authority%@*}@" ;; esac
+  printf '%s://%sbrain-test-postgres:5432%s' "$scheme" "$userinfo" "${rest:${#authority}}"
+}
+if [ "$WITH_BRAINDB" = "1" ]; then
+  if [ -n "$NETWORK" ]; then
+    echo "claude-docker: --braindb joins brain-test-postgres's network and cannot combine with --host-net / CLAUDE_DOCKER_NETWORK ($NETWORK). Aborting." >&2
+    exit 1
+  fi
+  braindb_nets=$(docker inspect -f '{{if .State.Running}}{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}{{end}}' \
+    brain-test-postgres 2>/dev/null || true)
+  # Word-split on purpose: network names hold no spaces.
+  read -r -a braindb_net_list <<<"$braindb_nets"
+  if [ "${#braindb_net_list[@]}" -ne 1 ]; then
+    echo "claude-docker: --braindb needs brain-test-postgres running on exactly one docker network (found: ${braindb_nets:-not running}). Start it with cd-brain, or compose.test.yml in laslo/brain. Aborting." >&2
+    exit 1
+  fi
+  MOUNT_ARGS+=("--network" "${braindb_net_list[0]}")
+  if [ -n "${BRAIN_TEST_DSN:-}" ]; then
+    if ! BRAIN_TEST_DSN=$(braindb_dsn_in_box "$BRAIN_TEST_DSN"); then
+      echo "claude-docker: --braindb: BRAIN_TEST_DSN is not a scheme:// URL, so its host can't be pointed at brain-test-postgres. Aborting." >&2
+      exit 1
+    fi
+    export BRAIN_TEST_DSN
+  fi
+fi
 
 # --- credential post-conditions: never launch a half-credentialled container
 #

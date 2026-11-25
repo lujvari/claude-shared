@@ -11,9 +11,10 @@ cd_workspace "laslo/brain";        brain=$ws
 cd_workspace "laslo/architecture"; arch=$ws
 
 # brain-test-postgres: Brain's own disposable test database, defined in
-# laslo/brain/compose.test.yml (loopback 47401; boxes reach it at
-# host.docker.internal:47401). Brought up before every launch so --braindb's
-# DSN always has something to answer it; `up --wait` is a no-op when it is
+# laslo/brain/compose.test.yml (loopback 47401 for host-side tests; --braindb
+# puts the box on the container's own network and points the DSN at
+# brain-test-postgres:5432). Brought up before every launch because --braindb
+# aborts when it isn't running; `up --wait` is a no-op when it is
 # already healthy. Stopped (not removed) when the last cd-brain box exits;
 # see cd_test_db_hold/cd_test_db_run in _lib.sh. Always through `op run`:
 # .env.test holds op:// refs for the init passwords, and leaving them
