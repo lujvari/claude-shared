@@ -48,7 +48,7 @@ claude-docker ~/repo -- --resume          # any claude flag after --
 | `--npm-feed` | Set `NPM_FEED_PASSWORD` to the base64 of the `--ado` PAT (the form `.npmrc` `_password` takes) for the sbp-controltower `SBP.Core.UI` feed. Requires `--ado`; the PAT needs Packaging (Read). Reference it from `~/.npmrc` as `_password=${NPM_FEED_PASSWORD}`, never a literal: `~/.npmrc` is on the shared home volume. Unset, npm skips auth for that feed only. |
 | `--mepdb`    | Forward `POSTGRES_TEST_URL`, the DSN of the **myEntryPoint brain test Postgres**, so the in-container test suite can reach it. Host env var when set, else `op read` via `CLAUDE_DOCKER_MEPDB_OP_REF` — one of three flags whose op-refs have a **built-in default** (`op://claude-docker/brain-test-postgres/dsn`; `--rr-e2e` and `--hetzner-infra` are the others), because this flag names one specific database rather than a class of service, so `--mepdb` alone is the whole setup. Override by pointing the var elsewhere, or set it to `""` to switch the 1Password path off. No mount: a connection string lives in a password manager, not in a CLI config file on disk. **The DSN embeds the password**, so unlike the token flags this is not a revocable API credential but direct database access for as long as the role exists — see [myEntryPoint test Postgres](#myentrypoint-test-postgres---mepdb). No git credential injection: Postgres is not a git host. |
 | `--braindb`  | Forward `BRAIN_TEST_DSN`, the DSN of the **Brain (laslo/brain) test Postgres** (`laslo_brain_test` in its own disposable container, `brain-test-postgres`, not the instance `--mepdb` uses), so Brain's in-container test suite can reach it. Same shape as `--mepdb`: host env var when set, else `op read` via `CLAUDE_DOCKER_BRAINDB_OP_REF`, **defaulted** to `op://claude-docker/laslo-brain-test-postgres/dsn` (the unprefixed `brain-test-postgres` item is myEntryPoint's), `""` switches the 1Password path off. A separate variable from `POSTGRES_TEST_URL`, so both flags can share a launch. The box joins `brain-test-postgres`'s docker network and sees the DSN with its host rewritten to `brain-test-postgres:5432`, so the container must be running at launch; not combinable with `--host-net`. Same DSN caveat — see [myEntryPoint test Postgres](#myentrypoint-test-postgres---mepdb). |
-| `--brain`    | Forward `BRAIN_CF_ACCESS_CLIENT_ID` and `BRAIN_CF_ACCESS_CLIENT_SECRET`, the **Cloudflare Access service token for the remote Brain MCP** (`https://brain.karansjet.dev/mcp`), and seed a user-scope `brain` MCP entry that references them. **On for every `cd-*` launcher**: `launchers/_lib.sh` exports `CLAUDE_DOCKER_BRAIN=1`. A plain `run.sh` stays opt-in. See [Brain MCP](#brain-mcp---brain). |
+| `--brain`    | Forward `BRAIN_CF_ACCESS_CLIENT_ID` and `BRAIN_CF_ACCESS_CLIENT_SECRET`, the **Cloudflare Access service token for the remote Brain MCP** (`https://brain.karansjet.dev/mcp`), and seed user-scope `brain` and `family-board` (`https://family.karansjet.dev/mcp`) MCP entries that reference them; both Access apps admit the same token. **On for every `cd-*` launcher**: `launchers/_lib.sh` exports `CLAUDE_DOCKER_BRAIN=1`. A plain `run.sh` stays opt-in. See [Cloudflare Access MCPs](#cloudflare-access-mcps---brain). |
 | `--rr-e2e`   | Forward the credentials the **RingRecipe live E2Es** need — both fixed test accounts (`E2E_EMAIL`/`E2E_PASSWORD`, `E2E2_EMAIL`/`E2E2_PASSWORD`) plus the non-secret `SUPABASE_URL` and `SUPABASE_ANON_KEY` — so `Flutter/tool/e2e.sh` can sign in. Host env vars when set, else `op read` for the four account fields. The op-refs name an **item**, not a field (`CLAUDE_DOCKER_RR_E2E_OP_ITEM`, `CLAUDE_DOCKER_RR_E2E2_OP_ITEM`), because username *and* password are read from each; both are **defaulted** like `--mepdb`'s, so the flag alone is the whole setup, and either can be set to `""` to switch that account off. The connection pair is never read from 1Password — the URL is a public hostname and the anon key ships inside the deployed web bundle. Deliberately **not** folded into `--supabase`, which carries an account-wide Management-API PAT: different credential, different blast radius — see [RingRecipe live E2Es](#ringrecipe-live-e2es---rr-e2e). No git credential injection: Supabase is a REST API, not a git host. |
 | `--hetzner-infra` | Forward `HCLOUD_TOKEN`, a **Hetzner Cloud Read & Write API token**, for infrastructure changes to the myEntryPoint Hetzner project — creating the server, firewall changes, restore drills. Read by the `hcloud` CLI and the Terraform/OpenTofu `hcloud` provider. Host env var when set, else `op read` via `CLAUDE_DOCKER_HETZNER_OP_REF`, **defaulted** to `op://claude-docker-infra/hcloud-mep/token` — a **separate vault, read with a separate service account** whose token sits in `CLAUDE_DOCKER_HETZNER_OP_TOKEN_FILE` (default `~/.config/op/infra-service-account-token`). Every other flag in the same launch still reads with the everyday account, so `cd-mep --yolo --hetzner-infra` just works. **Blast radius:** the token can delete the live server *and its backups*; that is why it is kept out of the `claude-docker` vault (cheap-to-rotate, disposable-resource secrets only) and why no launcher bakes the flag in — add it per session, only for infra work. See [Hetzner Cloud infrastructure](#hetzner-cloud-infrastructure---hetzner-infra). No git credential injection: Hetzner is a REST API, not a git host. |
 | `--claude-auth` | Share the **host Claude login** with the container: bind-mount `<config-dir>/.credentials.json` (read-write) over `/home/claude/.claude/.credentials.json` so host and container use a single OAuth token and refreshes propagate both ways. Without this flag the container keeps its *own* login in the `claude-code-home` volume, which diverges from the host — a host re-login rotates the account token and the container's stored token gets revoked, surfacing later as a `401 Invalid authentication credentials` / "Please run /login" inside the container. This flag makes the host file the single source of truth and ends that tug-of-war. **Security:** a `--yolo` container can then read **and write** your real Claude credential, so a prompt-injected file in a mounted workspace could exfiltrate or invalidate it — that's why it's opt-in and off by default. Source dir follows `--claude-dir` / `CLAUDE_DOCKER_CONFIG_DIR`; fails loudly if the host has never logged in. |
@@ -149,15 +149,18 @@ Claude Code expands `${VAR}` in an MCP `env` value from the container environmen
 
 **Do not paste the PAT in as a literal.** `~/.claude.json` lives in the persistent `claude-code-root` volume, so a literal survives every relaunch and cannot see a rotation in 1Password. Rotate the PAT and the sandbox keeps answering `401 Unauthorized` with a token that no longer exists while 1Password holds a working one — and restarting never helps, because the literal *is* the source. With `"${SUPABASE_ACCESS_TOKEN}"` the value is re-read from 1Password at every launch, so a rotation needs no in-container edit at all.
 
-### Brain MCP (`--brain`)
+### Cloudflare Access MCPs (`--brain`)
 
-The remote Brain MCP sits behind Cloudflare Access service auth. Every box
-started by a `cd-*` launcher gets it with no manual step:
+The remote Brain MCP and family-board's agent MCP both sit behind Cloudflare
+Access service auth, and both Access policies admit the same `claude-docker`
+service token. Every box started by a `cd-*` launcher gets both with no manual
+step:
 
 1. `run.sh` resolves the two halves of the Access service token into
    `BRAIN_CF_ACCESS_CLIENT_ID` and `BRAIN_CF_ACCESS_CLIENT_SECRET`.
-2. If `~/.claude.json` has no `brain` entry, `entrypoint.sh` adds one in user
-   scope:
+2. For each of `brain` and `family-board` that `~/.claude.json` lacks,
+   `entrypoint.sh` adds a user-scope entry. `brain`'s is below; `family-board`'s
+   is identical but for `"url": "https://family.karansjet.dev/mcp"`:
 
 ```json
 "brain": {
@@ -174,9 +177,10 @@ Only the placeholders are written to the file. Claude Code expands `${VAR}` in
 HTTP `headers`; this was checked in 2.1.304. So a token rotation needs nothing
 more than a relaunch.
 
-The entry is never removed, because `~/.claude.json` is shared by every box.
-A box started without `--brain` therefore warns `Missing environment
-variables` for `brain`, and its requests get a 403.
+The entries are never removed, because `~/.claude.json` is shared by every
+box. A box started without `--brain` therefore warns `Missing environment
+variables` for both, and their requests get a 403. The `BRAIN_` prefix on the
+variables predates family-board; the token is the box's, not Brain's.
 
 The host reaches Brain differently: it uses a `headersHelper` that reads
 `~/.config/brain`.

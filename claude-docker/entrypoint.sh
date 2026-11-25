@@ -181,20 +181,28 @@ if [ -f "$HOME/.claude/settings.docker.json" ]; then
   cp -f "$HOME/.claude/settings.docker.json" "$HOME/.claude/settings.json"
 fi
 
-# Remote Brain MCP (--brain). User scope lives in ~/.claude.json, which is on
-# the shared claude-code-root volume, so the entry holds only ${VAR}
-# placeholders and Claude Code expands them at connect time (header expansion
-# checked in 2.1.304). It is added once and never removed. A box without
-# --brain still sees the entry, warns about missing variables and gets a 403,
-# but removing the entry would break other boxes running at the same time. The
-# write goes through `claude mcp` so Claude Code's own writer touches the file.
-# A failure here only warns: the box still starts, just without Brain.
-if [ -n "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ] \
-   && ! jq -e '.mcpServers.brain' "$HOME/.claude.json" >/dev/null 2>&1; then
+# Remote MCPs behind Cloudflare Access (--brain). Brain and family-board both
+# admit the one claude-docker service token, so both entries use the
+# BRAIN_CF_ACCESS_* pair. User scope lives in ~/.claude.json, which is on the
+# shared claude-code-root volume, so an entry holds only ${VAR} placeholders
+# and Claude Code expands them at connect time (header expansion checked in
+# 2.1.304). Each is added once and never removed. A box without --brain still
+# sees the entries, warns about missing variables and gets a 403, but removing
+# them would break other boxes running at the same time. The write goes
+# through `claude mcp` so Claude Code's own writer touches the file. A failure
+# here only warns: the box still starts, just without that server.
+seed_access_mcp() {
+  local name=$1 url=$2
+  jq -e --arg n "$name" '.mcpServers[$n]' "$HOME/.claude.json" >/dev/null 2>&1 && return 0
   # Single quotes on purpose: the placeholders must reach the file unexpanded.
-  brain_mcp='{"type":"http","url":"https://brain.karansjet.dev/mcp","headers":{"CF-Access-Client-Id":"${BRAIN_CF_ACCESS_CLIENT_ID}","CF-Access-Client-Secret":"${BRAIN_CF_ACCESS_CLIENT_SECRET}"}}'
-  claude mcp add-json --scope user brain "$brain_mcp" >/dev/null 2>&1 \
-    || echo "claude-docker: could not add the brain MCP entry; Brain is unavailable in this box" >&2
+  claude mcp add-json --scope user "$name" \
+    '{"type":"http","url":"'"$url"'","headers":{"CF-Access-Client-Id":"${BRAIN_CF_ACCESS_CLIENT_ID}","CF-Access-Client-Secret":"${BRAIN_CF_ACCESS_CLIENT_SECRET}"}}' \
+    >/dev/null 2>&1 \
+    || echo "claude-docker: could not add the $name MCP entry; $name is unavailable in this box" >&2
+}
+if [ -n "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ]; then
+  seed_access_mcp brain https://brain.karansjet.dev/mcp
+  seed_access_mcp family-board https://family.karansjet.dev/mcp
 fi
 
 # `exec` so signals (Ctrl-C in tmux, container stop) reach claude/tmux
