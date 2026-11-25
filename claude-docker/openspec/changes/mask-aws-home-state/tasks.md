@@ -12,6 +12,6 @@
 
 ## 3. Host checks (owner)
 
-- [ ] 3.1 Rebuild not needed (`~/.aws` is already pre-created in the Dockerfile). Launch a box without `--aws`: `ls -A ~/.aws` is empty and `findmnt /home/claude/.aws` shows tmpfs.
+- [x] 3.1 Rebuild not needed (`~/.aws` is already pre-created in the Dockerfile). Launch a box without `--aws`: `ls -A ~/.aws` is empty and `findmnt /home/claude/.aws` shows tmpfs.
 - [x] 3.2 Launch a box with `--aws`: `findmnt` shows the config/sso binds over the tmpfs (`cd-cis`). The `aws sts get-caller-identity --profile aegon` check was dropped: the Aegon account is obsolete and its key revoked.
 - [ ] 3.3 Re-sync the installed hook. Boxes copy `hooks/` from the run.sh checkout at launch (`run.sh` wrapper-shipped hooks), so only the Windows host copy wired in the host `settings.json` needs it.
