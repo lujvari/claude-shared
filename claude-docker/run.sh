@@ -182,12 +182,12 @@ Wrapper flags:
                       CLAUDE_DOCKER_CIS_OP_REF (`op read` on host). Reference
                       it from the MCP entry's env as "${CIS_API_KEY}", never
                       a pasted literal: ~/.claude.json is on the shared volume.
-  --npm-feed          Opt in to the sbp-controltower npm feed: forward
-                      NPM_FEED_PASSWORD (the base64 PAT that .npmrc
-                      `_password` takes). Host env var when set, else
-                      1Password via CLAUDE_DOCKER_NPM_FEED_OP_REF. Reference
-                      it from ~/.npmrc as `_password=${NPM_FEED_PASSWORD}`;
-                      unset, npm skips auth for that feed only.
+  --npm-feed          Opt in to the sbp-controltower npm feed: set
+                      NPM_FEED_PASSWORD to the base64 of the --ado PAT (the
+                      form .npmrc `_password` takes). Requires --ado.
+                      Reference it from ~/.npmrc as
+                      `_password=${NPM_FEED_PASSWORD}`; unset, npm skips
+                      auth for that feed only.
   --mepdb             Opt in to the myEntryPoint test Postgres: forward
                       POSTGRES_TEST_URL so the in-container test suite can
                       reach the brain test database. Host env var when set,
@@ -732,9 +732,6 @@ fi
 # CIS_API_KEY feeds the cis-local MCP server, whose user-scope entry in
 # ~/.claude.json references "${CIS_API_KEY}" instead of holding the key.
 [ "$WITH_CIS" = "1" ] && ENV_VARS+=(CIS_API_KEY)
-# NPM_FEED_PASSWORD is referenced from the shared ~/.npmrc as
-# `_password=${NPM_FEED_PASSWORD}`; only CT boxes need the feed.
-[ "$WITH_NPM_FEED" = "1" ] && ENV_VARS+=(NPM_FEED_PASSWORD)
 # One variable, and all of it secret: a Postgres DSN carries user, password,
 # host and database in a single string. Nothing is split out — the test suite
 # hands the value straight to its driver, so any host-side decomposition would
@@ -922,7 +919,7 @@ op_read() {
 # configure and requiring the env var would only be ceremony. `${VAR-default}`
 # without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
 # turns the 1Password path off entirely, matching how an unset ref disables it
-# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar/--cis/--npm-feed.
+# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar/--cis.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
 # --braindb's op-ref: defaulted for the same reason as --mepdb's, one database
@@ -1038,10 +1035,6 @@ op_bin_needed_for=""
   if [ "$WITH_CIS" = "1" ] && [ -z "${CIS_API_KEY:-}" ] \
      && [ -n "${CLAUDE_DOCKER_CIS_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --cis"
-  fi
-  if [ "$WITH_NPM_FEED" = "1" ] && [ -z "${NPM_FEED_PASSWORD:-}" ] \
-     && [ -n "${CLAUDE_DOCKER_NPM_FEED_OP_REF:-}" ]; then
-    op_needed=1; op_needed_for="$op_needed_for --npm-feed"
   fi
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
@@ -1413,16 +1406,19 @@ if [ "$WITH_CIS" = "1" ] && [ -z "${CIS_API_KEY:-}" ] \
   fi
 fi
 
-# --npm-feed fallback: same shape as --cis.
-if [ "$WITH_NPM_FEED" = "1" ] && [ -z "${NPM_FEED_PASSWORD:-}" ] \
-   && [ -n "${CLAUDE_DOCKER_NPM_FEED_OP_REF:-}" ]; then
-  if command -v op >/dev/null 2>&1; then
-    npm_feed_pw=$(op_read "$CLAUDE_DOCKER_NPM_FEED_OP_REF" || true)
-    if [ -n "$npm_feed_pw" ]; then
-      NPM_FEED_PASSWORD="$npm_feed_pw"
-      export NPM_FEED_PASSWORD
-      ENV_ARGS+=("-e" "NPM_FEED_PASSWORD")
-    fi
+# --npm-feed: the shared ~/.npmrc references `_password=${NPM_FEED_PASSWORD}`
+# for the sbp-controltower SBP.Core.UI feed, and the --ado PAT can read it, so
+# derive the value (base64 of the PAT, as .npmrc wants) instead of keeping a
+# second PAT. Only CT boxes pass the flag.
+if [ "$WITH_NPM_FEED" = "1" ]; then
+  if [ "$WITH_ADO" != "1" ]; then
+    echo "claude-docker: --npm-feed needs --ado (it derives the feed password from the ADO PAT)" >&2
+    exit 1
+  fi
+  if [ -n "${AZURE_DEVOPS_EXT_PAT:-}" ]; then
+    NPM_FEED_PASSWORD=$(printf '%s' "$AZURE_DEVOPS_EXT_PAT" | base64 | tr -d '\n')
+    export NPM_FEED_PASSWORD
+    ENV_ARGS+=("-e" "NPM_FEED_PASSWORD")
   fi
 fi
 
@@ -1880,7 +1876,6 @@ cred_require() {
 [ "$WITH_OPENROUTER" = "1" ] && cred_require --openrouter OPENROUTER_API_KEY
 [ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
 [ "$WITH_CIS" = "1" ]        && cred_require --cis CIS_API_KEY
-[ "$WITH_NPM_FEED" = "1" ]   && cred_require --npm-feed NPM_FEED_PASSWORD
 [ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
 [ "$WITH_BRAINDB" = "1" ]    && cred_require --braindb BRAIN_TEST_DSN
 # Both headers are required, so each var is asserted on its own.

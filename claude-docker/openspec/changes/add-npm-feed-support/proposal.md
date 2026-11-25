@@ -1,25 +1,29 @@
+<!-- plan version: v2. v1 read a separate feed PAT from 1Password. That PAT
+     (from the old ~/.npmrc) had expired, and on 2026-11-25 the cd-ct --ado PAT
+     answered 200 on the feed, so v2 derives the password from it instead. -->
 ## Why
 
-`~/.npmrc` on the shared `claude-code-root` volume holds the sbp-controltower
+`~/.npmrc` on the shared `claude-code-root` volume held the sbp-controltower
 `SBP.Core.UI` feed credential as two literal `_password` lines, so every box
-reads it, other clients' boxes included (found 2026-11-24). Only the CT boxes
-(`cd-ct`, `cd-ws13`) need it. npm expands `${VAR}` in `.npmrc`; with the
-variable unset, npm leaves that one registry unauthenticated and works
-normally for every other registry (checked on npm 10.8.2).
+read it, other clients' boxes included (found 2026-11-24). Only the CT boxes
+(`cd-ct`, `cd-ws13`) need the feed. npm expands `${VAR}` in `.npmrc` (checked
+against a local fake registry); with the variable unset, npm leaves that one
+registry unauthenticated and works normally for every other registry (checked
+on npm 10.8.2).
 
-Whether the `--ado` PAT has Packaging (Read) scope is unknown, so the feed
-credential gets its own source instead of being derived from it.
+The `--ado` PAT those boxes already get can read the feed (HTTP 200 on a
+package metadata request, 2026-11-25). Deriving from it keeps one PAT to
+rotate instead of two.
 
 ## What Changes
 
-- New `--npm-feed` flag: forward `NPM_FEED_PASSWORD` (the value `.npmrc`
-  `_password` takes, i.e. the base64-encoded PAT), from the host env or
-  `op read "$CLAUDE_DOCKER_NPM_FEED_OP_REF"`. Same shape as `--sonar`.
+- New `--npm-feed` flag. It requires `--ado`, and sets `NPM_FEED_PASSWORD`
+  in the box to the base64 of the box's `AZURE_DEVOPS_EXT_PAT`, which is the
+  form `.npmrc` `_password` takes.
 - `cd-ct` and `cd-ws13` pass `--npm-feed`.
-- Owner-side: both `_password` lines in `~/.npmrc` become
-  `_password=${NPM_FEED_PASSWORD}`; the op-ref goes in the host env file.
+- `~/.npmrc` holds `_password=${NPM_FEED_PASSWORD}` for both feed paths.
 
 ## Out of scope
 
-- Deriving the password from `AZURE_DEVOPS_EXT_PAT`.
+- A separate feed PAT or op-ref.
 - Feeds other than the one `.npmrc` already names.

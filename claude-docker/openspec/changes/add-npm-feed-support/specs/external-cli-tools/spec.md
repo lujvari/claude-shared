@@ -1,27 +1,24 @@
 ## ADDED Requirements
 
-### Requirement: npm feed credential opt-in
+### Requirement: npm feed credential derived from the ADO PAT
 
-`run.sh` SHALL forward `NPM_FEED_PASSWORD` into the container only when the user passes `--npm-feed`, and only when non-empty. It SHALL come from the host environment when set there; otherwise, when `CLAUDE_DOCKER_NPM_FEED_OP_REF` names an `op://` reference, `run.sh` SHALL resolve it with `op read` on the host. There SHALL be no built-in default reference and no bind mount. When the flag is set, `run.sh` SHALL add `npm-feed` to `CLAUDE_DOCKER_FLAGS`. When the flag is set and `NPM_FEED_PASSWORD` is still empty, or the `op read` failed, `run.sh` SHALL abort before `docker run` unless `CLAUDE_DOCKER_OP_OPTIONAL=1` is set.
+When the user passes `--npm-feed`, `run.sh` SHALL set `NPM_FEED_PASSWORD` in the container to the base64 encoding, without line breaks, of the `AZURE_DEVOPS_EXT_PAT` the box receives. `--npm-feed` without `--ado` SHALL abort before `docker run` with an error naming both flags. Without `--npm-feed`, `NPM_FEED_PASSWORD` SHALL NOT be set in the container, even when the host has it. When the flag is set, `run.sh` SHALL add `npm-feed` to `CLAUDE_DOCKER_FLAGS`.
 
 #### Scenario: Feed credential reaches a CT box
 
-- **GIVEN** `CLAUDE_DOCKER_NPM_FEED_OP_REF` names a readable item
-- **AND** `~/.npmrc` sets the feed's `_password` to `${NPM_FEED_PASSWORD}`
+- **GIVEN** `~/.npmrc` sets the feed's `_password` to `${NPM_FEED_PASSWORD}`
+- **AND** the `--ado` PAT has Packaging (Read) on the feed
 - **WHEN** the user runs `cd-ct`
 - **THEN** `npm view` of a package on the feed succeeds inside the box
 - **AND** `CLAUDE_DOCKER_FLAGS` contains `npm-feed`
 
 #### Scenario: No flag, no feed credential
 
-- **GIVEN** `NPM_FEED_PASSWORD` is exported on the host
-- **WHEN** the user runs `claude-docker ~/repo` without `--npm-feed`
+- **WHEN** the user runs `claude-docker --ado ~/repo` without `--npm-feed`
 - **THEN** `NPM_FEED_PASSWORD` is not set inside the container
 - **AND** `npm view left-pad version` still succeeds
 
-#### Scenario: Unresolved credential aborts
+#### Scenario: Flag without --ado aborts
 
-- **GIVEN** `NPM_FEED_PASSWORD` and `CLAUDE_DOCKER_NPM_FEED_OP_REF` are unset on the host
-- **AND** `CLAUDE_DOCKER_OP_OPTIONAL` is not `1`
 - **WHEN** the user runs `claude-docker --npm-feed ~/repo`
-- **THEN** `run.sh` names `--npm-feed` on stderr and exits non-zero without starting a container
+- **THEN** `run.sh` names `--npm-feed` and `--ado` on stderr and exits non-zero without starting a container
