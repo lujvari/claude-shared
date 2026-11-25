@@ -177,6 +177,11 @@ Wrapper flags:
                       analysis tokens are bound to one project and 404 on
                       every other, which is indistinguishable from an
                       unauthorized read of a private project.
+  --cis               Opt in to CIS: forward CIS_API_KEY for the cis-local
+                      MCP server. Host env var when set, else 1Password via
+                      CLAUDE_DOCKER_CIS_OP_REF (`op read` on host). Reference
+                      it from the MCP entry's env as "${CIS_API_KEY}", never
+                      a pasted literal: ~/.claude.json is on the shared volume.
   --mepdb             Opt in to the myEntryPoint test Postgres: forward
                       POSTGRES_TEST_URL so the in-container test suite can
                       reach the brain test database. Host env var when set,
@@ -376,6 +381,7 @@ WITH_SUPABASE=0
 WITH_CLOUDFLARE=0
 WITH_OPENROUTER=0
 WITH_SONAR=0
+WITH_CIS=0
 WITH_MEPDB=0
 WITH_BRAINDB=0
 # Exported by launchers/_lib.sh, so every cd-* box gets Brain while a bare
@@ -412,6 +418,7 @@ for arg in "$@"; do
     --cloudflare)   WITH_CLOUDFLARE=1 ;;
     --openrouter)   WITH_OPENROUTER=1 ;;
     --sonar)        WITH_SONAR=1 ;;
+    --cis)          WITH_CIS=1 ;;
     --mepdb)        WITH_MEPDB=1 ;;
     --braindb)      WITH_BRAINDB=1 ;;
     --brain)        WITH_BRAIN=1 ;;
@@ -714,6 +721,9 @@ fi
 # forward beside the token — a SonarCloud user token carries whatever its
 # minting account can see, organisation-wide.
 [ "$WITH_SONAR" = "1" ] && ENV_VARS+=(SONAR_TOKEN SONAR_HOST_URL)
+# CIS_API_KEY feeds the cis-local MCP server, whose user-scope entry in
+# ~/.claude.json references "${CIS_API_KEY}" instead of holding the key.
+[ "$WITH_CIS" = "1" ] && ENV_VARS+=(CIS_API_KEY)
 # One variable, and all of it secret: a Postgres DSN carries user, password,
 # host and database in a single string. Nothing is split out — the test suite
 # hands the value straight to its driver, so any host-side decomposition would
@@ -901,7 +911,7 @@ op_read() {
 # configure and requiring the env var would only be ceremony. `${VAR-default}`
 # without the colon is deliberate — exporting CLAUDE_DOCKER_MEPDB_OP_REF="" then
 # turns the 1Password path off entirely, matching how an unset ref disables it
-# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar.
+# for --gh/--glab/--ado/--jira/--supabase/--cloudflare/--openrouter/--sonar/--cis.
 MEPDB_OP_REF="${CLAUDE_DOCKER_MEPDB_OP_REF-op://claude-docker/brain-test-postgres/dsn}"
 
 # --braindb's op-ref: defaulted for the same reason as --mepdb's, one database
@@ -1013,6 +1023,10 @@ op_bin_needed_for=""
   if [ "$WITH_SONAR" = "1" ] && [ -z "${SONAR_TOKEN:-}" ] \
      && [ -n "${CLAUDE_DOCKER_SONAR_OP_REF:-}" ]; then
     op_needed=1; op_needed_for="$op_needed_for --sonar"
+  fi
+  if [ "$WITH_CIS" = "1" ] && [ -z "${CIS_API_KEY:-}" ] \
+     && [ -n "${CLAUDE_DOCKER_CIS_OP_REF:-}" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --cis"
   fi
   if [ "$WITH_MEPDB" = "1" ] && [ -z "${POSTGRES_TEST_URL:-}" ] \
      && [ -n "$MEPDB_OP_REF" ]; then
@@ -1370,6 +1384,20 @@ if [ "$WITH_SONAR" = "1" ] && [ -z "${SONAR_TOKEN:-}" ] \
   fi
 fi
 
+# --cis fallback: when CIS_API_KEY isn't pre-set on the host, read it from
+# 1Password via `op read "$CLAUDE_DOCKER_CIS_OP_REF"`. Same shape as --sonar.
+if [ "$WITH_CIS" = "1" ] && [ -z "${CIS_API_KEY:-}" ] \
+   && [ -n "${CLAUDE_DOCKER_CIS_OP_REF:-}" ]; then
+  if command -v op >/dev/null 2>&1; then
+    cis_key=$(op_read "$CLAUDE_DOCKER_CIS_OP_REF" || true)
+    if [ -n "$cis_key" ]; then
+      CIS_API_KEY="$cis_key"
+      export CIS_API_KEY
+      ENV_ARGS+=("-e" "CIS_API_KEY")
+    fi
+  fi
+fi
+
 # --mepdb fallback: when POSTGRES_TEST_URL isn't pre-set on the host, read the
 # DSN from 1Password via `op read "$MEPDB_OP_REF"` (default
 # op://claude-docker/brain-test-postgres/dsn). Same shape as the
@@ -1577,6 +1605,7 @@ ADO_TAG=${ADO_PROFILE:-${CLAUDE_DOCKER_ADO_LABEL:-}}
 [ "$WITH_CLOUDFLARE" = "1" ] && DOCKER_FLAGS+=("cloudflare")
 [ "$WITH_OPENROUTER" = "1" ] && DOCKER_FLAGS+=("openrouter")
 [ "$WITH_SONAR" = "1" ]    && DOCKER_FLAGS+=("sonar")
+[ "$WITH_CIS" = "1" ]      && DOCKER_FLAGS+=("cis")
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_BRAINDB" = "1" ]  && DOCKER_FLAGS+=("braindb")
 [ "$WITH_BRAIN" = "1" ]    && DOCKER_FLAGS+=("brain")
@@ -1821,6 +1850,7 @@ cred_require() {
 [ "$WITH_CLOUDFLARE" = "1" ] && cred_require --cloudflare CLOUDFLARE_API_TOKEN
 [ "$WITH_OPENROUTER" = "1" ] && cred_require --openrouter OPENROUTER_API_KEY
 [ "$WITH_SONAR" = "1" ]      && cred_require --sonar SONAR_TOKEN
+[ "$WITH_CIS" = "1" ]        && cred_require --cis CIS_API_KEY
 [ "$WITH_MEPDB" = "1" ]      && cred_require --mepdb POSTGRES_TEST_URL
 [ "$WITH_BRAINDB" = "1" ]    && cred_require --braindb BRAIN_TEST_DSN
 # Both headers are required, so each var is asserted on its own.

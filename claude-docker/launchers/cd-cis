@@ -12,4 +12,5 @@ cd_workspace "sbp/cis"
 # helper offers the token to. run.sh derives neither (no glab-config parse).
 export GITLAB_HOST=sbp.gitlab.schubergphilis.com
 export CLAUDE_DOCKER_GITLAB_HOSTS=sbp.gitlab.schubergphilis.com
-exec "$CD_RUN" --claude-auth --aws --glab "$ws" "$@"
+# --cis forwards CIS_API_KEY for the cis-local MCP server (op-ref in the env file).
+exec "$CD_RUN" --claude-auth --aws --glab --cis "$ws" "$@"
