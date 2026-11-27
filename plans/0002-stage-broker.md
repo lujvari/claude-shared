@@ -24,7 +24,7 @@ Built so far (tasks 0.x-2.2): spikes confirmed box-to-stack loopback routing, re
 
 ## Changes
 
-- `tools/stage-broker/` (dev root) — broker core, done; add `teardown KEY`, TTL reaper and caps (stacks/CPU/RAM).
+- `tools/stage-broker/` (dev root) — broker core, `teardown KEY`, reaper and caps done. Reaper (`watch` every `reap_interval`, or `reap`): a registry entry whose box has no running container labelled `claude-docker.bus-key=<key>` and is older than `grace_seconds` is torn down; a stack older than `ttl_hours` since its last `up` is removed; a `stage-*` stack no entry names is removed; a pass where `docker ps` fails reaps nothing. `up` is refused once `max_stacks` stage stacks exist (one stack per box by construction); every service gets `deploy.resources.limits` at the lower of its own and `cpus`/`memory`. Defaults 4 stacks, 8 h, 60 s, 2 CPUs, 2g per service; override in `<home>/broker.json`.
 - `claude-docker/run.sh`, `claude-docker/launchers/_lib.sh` — `--stage <project>`: refuse if a live box has the key, register, set `STAGE_QUEUE=/bus/.stage` in the box, teardown on exit.
 - `tools/stage-broker/stacks/myentrypoint/stage.json` and stage env file (host side) — pilot file set `docker-compose.yml` plus `docker-compose.e2e.yml`, never `override.yml` (docker.sock, C:/dev mounts).
 - `laslo/kits` — skill: up, E2E harness, report, down, asking for approval on `held`.
