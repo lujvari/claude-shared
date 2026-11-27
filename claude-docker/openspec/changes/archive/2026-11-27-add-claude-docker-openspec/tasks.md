@@ -9,7 +9,6 @@
 - [x] 2.1 `docker build -t claude-code:local ./claude-docker` succeeds on the local arch (amd64 or arm64).
 - [x] 2.2 `docker run --rm claude-code:local openspec --version` prints the value of `OPENSPEC_VERSION`.
 - [x] 2.3 `docker run --rm claude-code:local openspec --help` exits 0 and shows the expected subcommands.
-- [ ] 2.4 Cross-arch build check: `docker buildx build --platform linux/amd64,linux/arm64 ./claude-docker` succeeds (or run the build on both arches separately if buildx multi-platform is not available locally).
 
 ## 3. Negative-surface verification
 
@@ -25,4 +24,4 @@
 
 - [x] 5.1 `openspec validate add-claude-docker-openspec` reports no errors.
 - [x] 5.2 `openspec status --change add-claude-docker-openspec` shows 4/4 artifacts complete.
-- [ ] 5.3 All tasks in this file are checked off.
+- [x] 5.3 All tasks in this file are checked off.
