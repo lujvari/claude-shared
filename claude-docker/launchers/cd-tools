@@ -8,6 +8,10 @@
 # ran in unboxed host sessions. --gh so both repos (github.com/lujvari) push
 # from the box — the same credential cd-mep and cd-rr already forward.
 #
+# Pure kit work (skills, rules) routes to cd-kits; this box keeps kits for
+# work that spans both repos. Both boxes share the one kits checkout, so
+# commit by path, never `git add -A`.
+#
 # Still host-only, by design: installing what is built here. Copying a skill
 # into ~/.claude/skills, linking a launcher into ~/bin and editing
 # ~/.claude/CLAUDE.md or settings.json — boxes see those read-only, so a box

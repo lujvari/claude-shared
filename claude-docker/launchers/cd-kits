@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# claude-docker launcher: kit content in laslo/kits (skills, rules, kit.json).
+# Pure kit work routes here, not to cd-tools. cd-tools still mounts kits for
+# work that spans both repos (agent-bus, hooks), so the two boxes share one
+# kits checkout: commit by path, never `git add -A`.
+#
+# kits only: run.sh's --ro is all-or-nothing, so claude-shared could only be
+# mounted read-write, and kit work doesn't need it. `cd-kits +tools/claude-shared`
+# for a one-off. --gh so the box pushes to github.com/lujvari.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+cd_workspace "laslo/kits"
+exec "$CD_RUN" --claude-auth --gh "$ws" "$@"

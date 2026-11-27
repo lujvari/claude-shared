@@ -51,7 +51,7 @@
 set -euo pipefail
 
 # The fleet, one group per window. Each name is a cd-<name> launcher on PATH.
-q1=(apg asr)
+q1=(apg asr kits)
 q3=(tools dev mep)
 q4=(brain cis ct inat)
 boxes=("${q1[@]}" "${q3[@]}" "${q4[@]}")

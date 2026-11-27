@@ -55,7 +55,7 @@ running)`, named boxes too; run `cd-cis` itself for a second session), checks
 tab per box ~3 s apart so the boxes' `op read`s don't time out together. A tab
 whose box fails stays open at a shell: retry with the up-arrow.
 
-The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr),
+The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr, kits),
 `cd-q3` (tools, dev, mep) and `cd-q4` (brain, cis, ct, inat). An open one
 just gets the tab. Plain `cd-up` leaves placing new windows to Windows.
 `--work` or `--home` snaps each window the run creates to exactly that desk's
@@ -123,6 +123,11 @@ integration, data store, MCP connection or deployment there updates the
 model too. Up to three boxes then share that one checkout, so commit model
 edits by path, never `git add -A` (see "Concurrent Claude sessions on one
 checkout" in the main README).
+
+`cd-tools` and `cd-kits` share the `laslo/kits` checkout the same way.
+Pure kit work (skills, rules) goes to `cd-kits`; `cd-tools` keeps kits
+mounted for work that spans both repos (agent-bus, hooks). Commit by path,
+never `git add -A`.
 
 The dev root is derived in `_lib.sh` from the checkout's own location, four
 levels above this directory — nothing to configure when the clone moves.
