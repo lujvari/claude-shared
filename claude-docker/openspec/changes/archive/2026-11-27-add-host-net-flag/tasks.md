@@ -13,7 +13,6 @@
 
 Not run as part of this retroactive record; the eed753a commit message records no verification.
 
-- [ ] 3.1 On a low-MTU VPN, Claude connects with `--host-net` where it fails without it
 - [x] 3.2 `CLAUDE_DOCKER_NETWORK=<name>` attaches the container to that network
 - [x] 3.3 Without the flag or variable, no `--network` argument is passed
 
