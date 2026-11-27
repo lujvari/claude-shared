@@ -20,6 +20,9 @@ export CLAUDE_DOCKER_DEV_ROOT="$DEV"
 # --no-bus in run.sh). Exported, not passed as a flag, so run.sh stays usable
 # without it; an explicit CLAUDE_DOCKER_BUS_DIR still wins.
 export CLAUDE_DOCKER_BUS_DIR="${CLAUDE_DOCKER_BUS_DIR:-$DEV/.agent-bus}"
+# The host stage broker that run.sh --stage registers a box with (dev-root
+# tools/stage-broker). Exported for the same reason; an explicit value wins.
+export CLAUDE_DOCKER_STAGE_BROKER="${CLAUDE_DOCKER_STAGE_BROKER:-$DEV/tools/stage-broker/stage_broker.py}"
 
 # The launcher's own name (cd-cis), for run.sh's claude-docker.box label, which
 # cd-up uses to skip a box that is already running. Every launcher sources this

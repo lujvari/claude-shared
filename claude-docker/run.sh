@@ -307,6 +307,14 @@ Wrapper flags:
                       mailbox when CLAUDE_DOCKER_BUS_DIR names a dir that does
                       not exist, or when <key> is not a safe name (anything
                       outside A-Za-z0-9._-, or a leading '.').
+  --stage PROJECT     Let the box run PROJECT's compose stack through the
+                      host stage broker (no Docker in the box). Registers the
+                      box's mailbox key for PROJECT just before launch, sets
+                      STAGE_QUEUE=/bus/.stage in the box, and tears the stack
+                      and its volumes down when the box exits. Refused when a
+                      live box already has the key. Needs the mailbox (not
+                      with --no-bus) and CLAUDE_DOCKER_STAGE_BROKER, the
+                      host's stage_broker.py (set by the cd-* launchers).
 
 Separator:
   --                  Ends wrapper-flag parsing. Everything after is passed
@@ -403,10 +411,13 @@ WITH_RR_E2E=0
 WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
 WITH_BUS=1
+STAGE_PROJECT=
+want_stage=0
 NETWORK="${CLAUDE_DOCKER_NETWORK:-}"
 CLAUDE_CONFIG_DIR="${CLAUDE_DOCKER_CONFIG_DIR:-$HOME/.claude}"
 saw_sep=0
 for arg in "$@"; do
+  if [ "$want_stage" = "1" ]; then STAGE_PROJECT=$arg; want_stage=0; continue; fi
   if [ "$arg" = "--" ]; then saw_sep=1; continue; fi
   if [ "$saw_sep" = "1" ]; then
     CLAUDE_FLAGS+=("$arg"); continue
@@ -442,6 +453,9 @@ for arg in "$@"; do
     --tmux)         CLAUDE_DOCKER_TMUX=1 ;;
     --claude-dir=*) CLAUDE_CONFIG_DIR="${arg#--claude-dir=}" ;;
     --no-bus)       WITH_BUS=0 ;;
+    --stage)        want_stage=1 ;;
+    --stage=)       want_stage=1; break ;;
+    --stage=*)      STAGE_PROJECT="${arg#--stage=}" ;;
     -*)            echo "claude-docker: unknown flag '$arg' (use -- to pass flags to claude)" >&2; exit 1 ;;
     +*)             # Workspace relative to the dev root, e.g. +clients/asr/asr-switch.
                     # The root comes from the cd-* launchers (_lib.sh), so a box
@@ -453,6 +467,12 @@ for arg in "$@"; do
   esac
 done
 [ "${#WORKSPACES[@]}" -eq 0 ] && WORKSPACES=("$PWD")
+# A dangling --stage, or a name the broker would refuse after the op reads.
+case "$want_stage:$STAGE_PROJECT" in
+  0:) ;;
+  1:*|*:*[!a-z0-9_-]*|0:[!a-z0-9]*)
+    echo "claude-docker: --stage needs a project name ([a-z0-9][a-z0-9_-]*)" >&2; exit 1 ;;
+esac
 # Expand a leading ~/ in CLAUDE_CONFIG_DIR — needed when set via env var, where
 # the shell does not perform tilde expansion. Pattern is "~/" not "~" so a
 # user-tilde form like "~alice/path" is not silently misresolved as "$HOME/alice/path".
@@ -586,6 +606,15 @@ if [ "$WITH_BUS" = "1" ] && [ -n "$BUS_DIR" ]; then
   else
     echo "claude-docker: CLAUDE_DOCKER_BUS_DIR=$BUS_DIR does not exist; launching without a mailbox" >&2
   fi
+fi
+# --stage rides on the mailbox: the request queue is /bus/.stage and the
+# broker's identity for the box is the bus key. Checked here, registered just
+# before docker run (see lib/stage.sh).
+if [ -n "$STAGE_PROJECT" ]; then
+  [ -n "${bus_key:-}" ] && [ -d "$BUS_DIR/$bus_key" ] \
+    || { echo "claude-docker: --stage needs the agent-bus mailbox (CLAUDE_DOCKER_BUS_DIR, not --no-bus)" >&2; exit 1; }
+  [ -n "${CLAUDE_DOCKER_STAGE_BROKER:-}" ] \
+    || { echo "claude-docker: --stage needs CLAUDE_DOCKER_STAGE_BROKER (set by the cd-* launchers)" >&2; exit 1; }
 fi
 
 # --glab deliberately does NOT mount the host glab-cli config. GitLab auth
@@ -1663,7 +1692,9 @@ mkdir -p "$stage_root"
 stage=$(mktemp -d "$stage_root/host.XXXXXX")
 # `case` instead of `[[ ]]` for bash 3.2 friendliness inside the trap string.
 # $HOME is expanded at trap execution time, * is a glob wildcard.
-trap 'rm -f "$OP_FAIL_LOG"; case "$stage" in "$HOME/.cache/claude-docker/host."*) rm -rf "$stage" ;; esac' EXIT
+# shellcheck source=lib/stage.sh
+. "$SELF_DIR/lib/stage.sh"
+trap 'rm -f "$OP_FAIL_LOG"; case "$stage" in "$HOME/.cache/claude-docker/host."*) rm -rf "$stage" ;; esac; stage_teardown' EXIT
 
 for item in agents commands skills; do
   src="$CLAUDE_CONFIG_DIR/$item"
@@ -1990,8 +2021,16 @@ fi
 # pre-built SDKs under /opt are owned by 1000. No capability is added back —
 # DAC_OVERRIDE/FOWNER existed only so root could write files it didn't own,
 # and a non-root process gets no effective capabilities anyway.
+# Last, so nothing between registering and launching can abort the launch and
+# a stack outlives no box (the EXIT trap tears it down either way).
+if [ -n "$STAGE_PROJECT" ]; then
+  stage_start "$CLAUDE_DOCKER_STAGE_BROKER" "$BUS_DIR" "$bus_key" "$STAGE_PROJECT" || exit 1
+  ENV_ARGS+=("-e" "STAGE_QUEUE=/bus/.stage")
+fi
+
 docker run --rm "$DOCKER_TTY_FLAGS" \
   --label "claude-docker.box=${CLAUDE_DOCKER_BOX:-}" \
+  --label "claude-docker.bus-key=${bus_key:-}" \
   --user "$BOX_UID:$BOX_GID" \
   --security-opt no-new-privileges \
   --cap-drop ALL \
