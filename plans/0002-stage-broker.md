@@ -38,7 +38,7 @@ Docker Compose v5.6+ on the host. Stage env file must supply dummy `OP_SERVICE_A
 - [ ] REQ-5: `--stage <project>` registers the box, refuses a live duplicate key, sets `STAGE_QUEUE`, and tears the stack down on exit; kill the box and confirm the stack is gone.
 - [ ] REQ-5: TTL reaper, crash cleanup and caps work; a stack count over the cap is refused (test).
 - [ ] REQ-2, REQ-6: Host config for the pilot file set lints clean with dummy env; `env` inside a stack shows no vault or broker variables.
-- [ ] REQ-1, REQ-3: Skill in `laslo/kits` covers up, E2E, report, down and how to ask for approval on `held`; an unknown verb is refused and a compose edit yields `held` with a diff.
+- [x] REQ-1, REQ-3: Skill in `laslo/kits` covers up, E2E, report, down and how to ask for approval on `held`; an unknown verb is refused and a compose edit yields `held` with a diff. — verified: kits 0016 `stage-stack`, run against the real broker (unknown verb exit 2, unapproved `up` held with diff, approved `up` ok).
 - [ ] REQ-4, REQ-7: Autonomous run on a small change in the pilot project with a second box on the same port; both stacks run on distinct ports, E2E is green, the report matches the owner's manual check, and `verify` reports the audit chain intact.
 - [x] REQ-8: `up`/`url` replies carry exactly the `box_env` values (test).
 - [ ] Tests pass
