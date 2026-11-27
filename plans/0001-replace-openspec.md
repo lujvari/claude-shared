@@ -2,7 +2,7 @@
 
 **Spec:** specs/0001-replace-openspec.md
 **Effort:** big
-**Status:** approved
+**Status:** done
 
 ## Approach
 
@@ -62,10 +62,10 @@ After the run, done attended in the main session (not run tasks: the files sit o
 
 ## Acceptance Checklist
 
-- [ ] REQ-1, REQ-2: `python3 .claude/runs/drop-openspec-1.check-current.py specs/CURRENT.md` exits 0 (headings, floors, `(0001)` on every bullet). Then a reviewer samples 5 base requirements and 5 change requirements and finds each covered.
-- [ ] REQ-3: each deviation Assumption in the run file names source and code `file:line`; the reviewer re-checks 3 against the code. They are copied into the closeout commit message.
-- [ ] REQ-4: `OPEN.md` has 21 `- **` items. `grep -ci openspec OPEN.md` and `grep -c '/root' OPEN.md` are both 0. The reviewer runs one item cold and finds it complete.
-- [ ] REQ-5: `specs/0002-stage-broker.md` has 7 `- REQ-` lines and Status draft. `plans/0002-stage-broker.md` has Status draft. `spec-check.py 0002` reports no `[pairing]` finding.
-- [ ] REQ-6: `test ! -e claude-docker/openspec && test ! -e openspec && test ! -e skills/spec`. `git grep -nE 'openspec/|openspec:|openspec change|changes/(archive|add-)'` hits only `specs/0001-*` and `plans/0001-*`.
-- [ ] REQ-7: `bash -n claude-docker/entrypoint.sh claude-docker/lib/*.sh` passes. Every path cited in a changed comment exists (`git diff <base> -U0` reviewed).
-- [ ] REQ-8: `grep -c '@fission-ai/openspec' claude-docker/Dockerfile` is 1.
+- [x] REQ-1, REQ-2: `python3 .claude/runs/drop-openspec-1.check-current.py specs/CURRENT.md` exits 0 (headings, floors, `(0001)` on every bullet). Then a reviewer samples 5 base requirements and 5 change requirements and finds each covered. — verified: check-current.py exits 0 at review; owner sampled 5+5 requirements (manual test 1)
+- [x] REQ-3: each deviation Assumption in the run file names source and code `file:line`; the reviewer re-checks 3 against the code. They are copied into the closeout commit message. — verified: 29 deviation Assumptions (A4–A32) each cite file:line; owner re-checked 3 (manual test 2); copied into this closeout commit
+- [x] REQ-4: `OPEN.md` has 21 `- **` items. `grep -ci openspec OPEN.md` and `grep -c '/root' OPEN.md` are both 0. The reviewer runs one item cold and finds it complete. — verified: 21 items, both greps 0 at review; owner ran one item cold (manual test 3)
+- [x] REQ-5: `specs/0002-stage-broker.md` has 7 `- REQ-` lines and Status draft. `plans/0002-stage-broker.md` has Status draft. `spec-check.py 0002` reports no `[pairing]` finding. — verified: run T1 Verify passed and re-passed at review
+- [x] REQ-6: `test ! -e claude-docker/openspec && test ! -e openspec && test ! -e skills/spec`. `git grep -nE 'openspec/|openspec:|openspec change|changes/(archive|add-)'` hits only `specs/0001-*` and `plans/0001-*`. — verified: dirs absent; git grep hits only plans/0001-replace-openspec.md at review
+- [x] REQ-7: `bash -n claude-docker/entrypoint.sh claude-docker/lib/*.sh` passes. Every path cited in a changed comment exists (`git diff <base> -U0` reviewed). — verified: bash -n passes; every changed comment cites specs/CURRENT.md, which exists
+- [x] REQ-8: `grep -c '@fission-ai/openspec' claude-docker/Dockerfile` is 1. — verified: count is 1 at review

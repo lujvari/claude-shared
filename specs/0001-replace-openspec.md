@@ -1,6 +1,6 @@
 # 0001 — Replace OpenSpec with numbered specs and plans
 
-**Status:** approved
+**Status:** done
 
 ## Purpose
 
