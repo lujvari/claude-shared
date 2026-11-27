@@ -18,7 +18,7 @@ Up flow: resolve file set from host config, run `docker compose config --format 
 
 Lint rejects: unremappable host ports, privileged, host network/pid/ipc/uts/userns, cap_add, devices, security_opt, sysctls, volumes_from, `network_mode: container:`/`service:`, external networks/volumes, docker.sock, bind or volume-driver mounts outside the project dir, secrets/configs `file:`, interpolation of anything but the stage env file.
 
-Secrets: stacks hold only stage-env values from a host-side file (dummy or scoped); `op run` is not used. `logs` returns raw output; scrubbing is not relied on. Box to stack route: `host.docker.internal:<mapped port>`.
+Secrets: stacks hold only stage-env values from a host-side file (dummy or scoped); `op run` is not used. Box-visible values (REQ-8): `stage.json` lists names in `box_env`; `up` and `url` replies carry `env: {name: value}` for those names that the stage env defines, nothing else. `logs` returns raw output; scrubbing is not relied on. Box to stack route: `host.docker.internal:<mapped port>`.
 
 Built so far (tasks 0.x-2.2): spikes confirmed box-to-stack loopback routing, registry unreachable from the box, and compose `!reset`/`!override` merging; broker core (`lint.py`, `approval.py`, `stack.py`, `audit.py`, `stage_broker.py` CLI, `service.py` six verbs) and `test_e2e.py` are done with 72 tests green on Windows and WSL. Remaining: launcher integration and the myEntryPoint pilot.
 
@@ -40,4 +40,5 @@ Docker Compose v5.6+ on the host. Stage env file must supply dummy `OP_SERVICE_A
 - [ ] REQ-2, REQ-6: Host config for the pilot file set lints clean with dummy env; `env` inside a stack shows no vault or broker variables.
 - [ ] REQ-1, REQ-3: Skill in `laslo/kits` covers up, E2E, report, down and how to ask for approval on `held`; an unknown verb is refused and a compose edit yields `held` with a diff.
 - [ ] REQ-4, REQ-7: Autonomous run on a small change in the pilot project with a second box on the same port; both stacks run on distinct ports, E2E is green, the report matches the owner's manual check, and `verify` reports the audit chain intact.
+- [x] REQ-8: `up`/`url` replies carry exactly the `box_env` values (test).
 - [ ] Tests pass

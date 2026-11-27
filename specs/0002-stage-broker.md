@@ -15,6 +15,7 @@ Boxed agents are locked down (no extra privileges, no container-engine socket), 
 - REQ-5: A stack SHALL be removed when its box exits, crashes or its time limit expires, and a box SHALL NOT exceed its stack cap.
 - REQ-6: A stack SHALL receive only the host-side stage environment values, and the vault service-account token SHALL NOT reach it.
 - REQ-7: Every request, hold, approval and refusal SHALL be appended to a hash-chained audit log.
+- REQ-8: A box SHALL be able to read the stage-env values its owner marks as box-visible for its own stack (such as a database password), and SHALL NOT receive any other stage-env value or any value from the broker's own environment.
 
 ## Scenarios
 
@@ -63,6 +64,11 @@ Boxed agents are locked down (no extra privileges, no container-engine socket), 
 - **When** the stack runs `env`
 - **Then** no variable from the host vault or the broker's own environment is present
 
+### Scenario: Connection credentials
+- **Given** a stack whose host config marks `DB_PASSWORD` box-visible, and a stage env that also holds `OTHER_SECRET`
+- **When** the box requests `up` or `url`
+- **Then** the reply carries `DB_PASSWORD` with its stage-env value, and not `OTHER_SECRET`
+
 ### Scenario: Tamper
 - **Given** an audit log with records
 - **When** an audit record is edited
@@ -72,6 +78,7 @@ Boxed agents are locked down (no extra privileges, no container-engine socket), 
 
 - The box is untrusted and can edit everything in its workspace; only the runtime definition is owner-approved, and application code under test runs in containers with no host mounts and no vault credentials.
 - Out of scope: remote staging host, image scanning, LLM judge, production deploys, projects other than the pilot.
+- Stage-env values are stage-only (dummy, or scoped to the throwaway stack); a box-visible one ends up in the box's transcript, so never a real credential.
 - Known limitation: boxes can reach each other's mapped loopback ports (accepted for personal use; revisit for work).
 
 ## Open Questions
