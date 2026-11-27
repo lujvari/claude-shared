@@ -10,7 +10,7 @@ Brain (laslo/brain) mirrors part of its backlog to Notion; its spec/plan 0009 st
 
 - REQ-1: `run.sh --brain-notion` SHALL forward `BRAIN_NOTION_TOKEN` into the box from the launching environment when set, else from `op read` of `CLAUDE_DOCKER_BRAIN_NOTION_OP_REF`, defaulted to a reference in the vault the launcher's 1Password account already reads; an explicitly empty reference SHALL switch the 1Password path off.
 - REQ-2: `--brain-notion` SHALL forward `BRAIN_NOTION_TEST_DATABASE_ID` from the launching environment, including the claude-docker env file; it is not a secret and has no 1Password path.
-- REQ-3: A `--brain-notion` launch SHALL abort before `docker run`, naming the flag and the missing variable and never printing a value, when either variable is still empty after both sources.
+- REQ-3: When either variable is still empty after both sources, a `--brain-notion` launch SHALL print one warning naming the flag and the missing variable, never a value, and SHALL start the box as if the flag were absent: neither variable forwarded, `brain-notion` not in `CLAUDE_DOCKER_FLAGS`. A missing database id SHALL skip the 1Password read. (Amended 2026-11-27: the abort locked `cd-brain`, which always passes the flag, out until the Notion setup existed.)
 - REQ-4: `--brain-notion` SHALL add `brain-notion` to `CLAUDE_DOCKER_FLAGS`; without the flag neither variable reaches the box.
 - REQ-5: `cd-brain` SHALL launch with `--brain-notion`.
 
@@ -24,7 +24,7 @@ Brain (laslo/brain) mirrors part of its backlog to Notion; its spec/plan 0009 st
 ### Scenario: Missing database id
 - **Given** `--brain-notion` and no `BRAIN_NOTION_TEST_DATABASE_ID` anywhere
 - **When** `run.sh` starts
-- **Then** it exits non-zero before `docker run`, naming `--brain-notion` and `BRAIN_NOTION_TEST_DATABASE_ID`
+- **Then** it warns, naming `--brain-notion` and `BRAIN_NOTION_TEST_DATABASE_ID`, and starts the box with no Notion variable and no `brain-notion` flag
 
 ### Scenario: No flag
 - **Given** both variables set on the host

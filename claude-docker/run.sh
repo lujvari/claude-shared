@@ -229,8 +229,9 @@ Wrapper flags:
                       via CLAUDE_DOCKER_BRAIN_NOTION_OP_REF, defaulted to
                         op://claude-docker/brain-notion-token/credential
                       "" switches the 1Password path off) and the non-secret
-                      BRAIN_NOTION_TEST_DATABASE_ID, which must be set in the
-                      env or the env file; the launch aborts without it.
+                      BRAIN_NOTION_TEST_DATABASE_ID from the env or the env
+                      file. Either missing: one warning, and the box starts
+                      as if the flag were absent.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
                       non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so
@@ -715,10 +716,11 @@ fi
 
 # --brain-notion's database id is not a secret and has no 1Password path, so a
 # missing one is a config gap, not a failed read: say so here, before any op
-# call, rather than in the credential gate whose advice is about 1Password.
+# call. Warn and drop the flag rather than abort (spec 0004 REQ-3): cd-brain
+# always passes it, and the Notion probe is one test, not the box's purpose.
 if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TEST_DATABASE_ID:-}" ]; then
-  echo "claude-docker: --brain-notion needs BRAIN_NOTION_TEST_DATABASE_ID (not a secret): add it to $CD_ENV_FILE" >&2
-  exit 1
+  echo "claude-docker: --brain-notion skipped: BRAIN_NOTION_TEST_DATABASE_ID (not a secret) is not set; add it to $CD_ENV_FILE" >&2
+  WITH_BRAIN_NOTION=0
 fi
 
 # Named ADO profile (lib/ado-profile.sh). Resolved before ENV_VARS and before
@@ -1554,6 +1556,23 @@ if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TOKEN:-}" ] \
     ENV_ARGS+=("-e" "BRAIN_NOTION_TOKEN")
   fi
 fi
+# No token from either source: drop the flag, as for a missing id above, and
+# take back the id's `-e` pair, which ENV_VARS already added.
+if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TOKEN:-}" ]; then
+  echo "claude-docker: --brain-notion skipped: BRAIN_NOTION_TOKEN is not set and could not be read from 1Password (CLAUDE_DOCKER_BRAIN_NOTION_OP_REF)" >&2
+  WITH_BRAIN_NOTION=0
+  unset BRAIN_NOTION_TEST_DATABASE_ID
+  bn_keep=()
+  for ((bn_i = 0; bn_i < ${#ENV_ARGS[@]}; bn_i++)); do
+    if [ "${ENV_ARGS[bn_i]}" = "-e" ] \
+       && [ "${ENV_ARGS[bn_i+1]:-}" = "BRAIN_NOTION_TEST_DATABASE_ID" ]; then
+      bn_i=$((bn_i + 1)); continue
+    fi
+    bn_keep+=("${ENV_ARGS[bn_i]}")
+  done
+  ENV_ARGS=("${bn_keep[@]}")
+  unset bn_keep bn_i
+fi
 
 # Fill one --rr-e2e account field from 1Password when the host has not already
 # set it. $1 = env var to fill, $2 = op:// item ref, $3 = field name. Four
@@ -1993,7 +2012,6 @@ cred_require() {
 # Both headers are required, so each var is asserted on its own.
 [ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_ID
 [ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_SECRET
-[ "$WITH_BRAIN_NOTION" = "1" ] && cred_require --brain-notion BRAIN_NOTION_TOKEN
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
 [ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
 

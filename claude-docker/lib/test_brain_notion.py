@@ -100,8 +100,9 @@ class BrainNotionTest(unittest.TestCase):
         r = self.run_sh("--brain-notion", env_file=f"BRAIN_NOTION_TEST_DATABASE_ID={DB_ID}\n",
                         CLAUDE_DOCKER_BRAIN_NOTION_OP_REF="")
         self.assertEqual(self.op_reads(), [])
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("--brain-notion", r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--brain-notion skipped: BRAIN_NOTION_TOKEN", r.stderr)
+        self.assertSkipped()
 
     def test_host_token_wins(self):
         r = self.run_sh("--brain-notion", BRAIN_NOTION_TOKEN="host-token",
@@ -117,20 +118,27 @@ class BrainNotionTest(unittest.TestCase):
         self.assertEqual(self.op_reads(), [DEFAULT_REF])
 
     # REQ-3
-    def test_missing_database_id_aborts_before_op(self):
+    def assertSkipped(self):
+        argv = self.docker_run()["argv"]
+        self.assertNotIn("BRAIN_NOTION", " ".join(argv))
+        self.assertFalse(any(a.startswith("CLAUDE_DOCKER_FLAGS=") and "brain-notion" in a
+                             for a in argv))
+        self.assertEqual(self.docker_run()["env"].get("BRAIN_NOTION_TEST_DATABASE_ID"), None)
+
+    def test_missing_database_id_skips_flag_before_op(self):
         r = self.run_sh("--brain-notion")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("--brain-notion needs BRAIN_NOTION_TEST_DATABASE_ID", r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--brain-notion skipped: BRAIN_NOTION_TEST_DATABASE_ID", r.stderr)
         self.assertEqual(self.op_reads(), [])
-        self.assertIsNone(self.docker_run())
+        self.assertSkipped()
         self.assertNoValues(r)
 
-    def test_missing_token_aborts_in_credential_gate(self):
+    def test_missing_token_skips_flag(self):
         r = self.run_sh("--brain-notion", env_file=f"BRAIN_NOTION_TEST_DATABASE_ID={DB_ID}\n",
                         STUB_OP_VALUE="")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("--brain-notion - none of (BRAIN_NOTION_TOKEN) is set", r.stderr)
-        self.assertIsNone(self.docker_run())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--brain-notion skipped: BRAIN_NOTION_TOKEN", r.stderr)
+        self.assertSkipped()
         self.assertNoValues(r)
 
     # REQ-4
