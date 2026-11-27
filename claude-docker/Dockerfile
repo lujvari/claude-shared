@@ -52,6 +52,8 @@ ARG FLUTTER_SHA256_X86_64=a9120fa4a01048bdef438ddc3a2d4b7389662ea98a95db86eeaf10
 # systemd-sysv/wget/perl; the CfT tarball is a lean, pinnable, snap-free build.
 # x86_64-only (Google publishes no arm64 CfT Linux build). Bump + get the sha:
 #   V=<ver>; curl -fsSL https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chrome-linux64.zip | sha256sum
+# Bump playwright-requirements.txt with it: Python Playwright drives this
+# browser and must target the same Chromium major.
 ARG CHROME_FOR_TESTING_VERSION=151.0.7922.77
 ARG CHROME_FOR_TESTING_SHA256_X86_64=60a324a6e1d27b20f2035a2cdaf71641a739fe1f5571f63794773225820bce8a
 # chromedriver — pinned to the SAME CfT release as the browser above, so the
@@ -70,9 +72,9 @@ ARG CHROMEDRIVER_SHA256_X86_64=65dca829d176845f864b794be1ecdd31e855f14ca9fa1eb93
 #   C=9.0; I=https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json
 #   R=$(curl -fsSL $I | jq -r '.["releases-index"][]|select(.["channel-version"]=="'$C'")|.["releases.json"]')
 #   curl -fsSL $R | jq -r '.releases[0].sdk | .version, (.files[]|select(.name|endswith("-linux-x64.tar.gz") or endswith("-linux-arm64.tar.gz"))|"\(.name) \(.hash)")'
-ARG DOTNET_SDK_8_VERSION=8.0.425
-ARG DOTNET_SDK_8_SHA512_X86_64=934b8060a7190e5909ad1fd0785db542f487b3bbf6cdd14826b02095fdd0d0394298b1634085eff302928fccc33f7c1a7253e9b87df555fc36fce819bcd2e798
-ARG DOTNET_SDK_8_SHA512_AARCH64=84a4d017d74d7aa842e981679d1b044e6be1f35b9b2b214021e30bc40871d016d29611cca373d8502ad5c890e3ad360ee698f9cf2d7a4d5a9fba102d88ba310f
+ARG DOTNET_SDK_8_VERSION=8.0.428
+ARG DOTNET_SDK_8_SHA512_X86_64=33212bb99a2bf003973d41106c7e8fe94208a12958ff601d4a476be379403c85a7dc9183a6ec64dfb44ded7102965be09f35add1758e68e9251bae7891d7b7bf
+ARG DOTNET_SDK_8_SHA512_AARCH64=bcc10091e404baaec01d538be8bd7125a33a8338594a6a795b1036128ace747a450d3f1482f16210b6a7ee937b911488676109156ec2c905ce31030badb1b0f2
 ARG DOTNET_SDK_9_VERSION=9.0.318
 ARG DOTNET_SDK_9_SHA512_X86_64=e8685293a3512178e0de1bb3c1663e31fdf9d761af705094bf833cc1ff6b9a18c543aa4141f0216503c98039c719585a6d32905b0bbb3279e93b7e7616e047c3
 ARG DOTNET_SDK_9_SHA512_AARCH64=f9c957867bddea8f82ec0459432ce7ddff8fafc846537b8003eb9f239d9c2e38586031a15954e74691c5a8cf5b3ab125d99bca85c74ca45dc8745071ca81e7ff
@@ -484,9 +486,15 @@ RUN set -e; ARCH=$(uname -m); \
 # globally-installed tools survive restarts). Telemetry off and NOLOGO on for the
 # same reason as elsewhere: no phoning home from a sandbox, and no first-run
 # banner polluting agent transcripts.
+# EnableSourceControlManagerQueries=false: MSBuild reads env vars as
+# properties, and this one skips SourceLink's own .git parser, which rejects
+# `extensions.relativeWorktrees` ("Unsupported repository extension") and so
+# fails every build in a worktree made with relative paths. Box builds carry no
+# commit SHA as a result; release builds come from CI.
 ENV DOTNET_ROOT=/opt/dotnet \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
+    EnableSourceControlManagerQueries=false \
     PATH=/opt/dotnet:/home/claude/.dotnet/tools:${PATH}
 
 # Go toolchain at /usr/local/go.
@@ -508,6 +516,62 @@ RUN set -e; ARCH=$(uname -m); \
 # a stale GOROOT left in a volume's .bashrc would point it at the wrong tree.
 ENV GOPATH=/home/claude/go \
     PATH=/usr/local/go/bin:/home/claude/go/bin:${PATH}
+
+# SQL Server tools: go-sqlcmd (`sqlcmd`) to run queries and sqlpackage to
+# publish dacpacs, so a box can verify database changes against a SQL Server it
+# can reach. go-sqlcmd ships only .tar.bz2 and the image has no bzip2, so
+# Python's tarfile unpacks it (no apt layer for one archive). Bump + get the
+# hashes with:
+#   V=<ver>; for a in amd64 arm64; do curl -fsSL https://github.com/microsoft/go-sqlcmd/releases/download/v$V/sqlcmd-linux-$a.tar.bz2 | sha256sum; done
+ARG SQLCMD_VERSION=1.11.0
+ARG SQLCMD_SHA256_X86_64=2e41111d2e00782d50b9f8887bf603890af1e85e308708703e4ce27dc3c410e7
+ARG SQLCMD_SHA256_AARCH64=9e8540e7d8e6d9941a73846b7cf9bbbe20d20b2abb9b0f0fa43fdc35ea9f157f
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  GOARCH=amd64; SHA="${SQLCMD_SHA256_X86_64}" ;; \
+      aarch64) GOARCH=arm64; SHA="${SQLCMD_SHA256_AARCH64}" ;; \
+      *) echo "Unsupported arch for sqlcmd: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/microsoft/go-sqlcmd/releases/download/v${SQLCMD_VERSION}/sqlcmd-linux-${GOARCH}.tar.bz2" \
+      -o /tmp/sqlcmd.tar.bz2; \
+    echo "${SHA}  /tmp/sqlcmd.tar.bz2" | sha256sum -c -; \
+    python3 -c 'import sys, tarfile; t = tarfile.open(sys.argv[1]); t.extractall(sys.argv[2], members=[t.getmember(n) for n in ("sqlcmd", "NOTICE.md")], filter="data")' \
+      /tmp/sqlcmd.tar.bz2 /opt/sqlcmd; \
+    rm /tmp/sqlcmd.tar.bz2; \
+    ln -s /opt/sqlcmd/sqlcmd /usr/local/bin/sqlcmd
+
+# sqlpackage as a .NET tool under /opt (a `dotnet tool install -g` would land in
+# ~/.dotnet/tools, which the home volume masks). The config clears every source
+# but the directory holding the hash-checked .nupkg. Its net8.0 build needs the
+# runtime patch of DOTNET_SDK_8_VERSION or newer. Bump + get the hash with:
+#   V=<ver>; curl -fsSL https://api.nuget.org/v3-flatcontainer/microsoft.sqlpackage/$V/microsoft.sqlpackage.$V.nupkg | sha512sum
+ARG SQLPACKAGE_VERSION=170.6.60
+ARG SQLPACKAGE_NUPKG_SHA512=9e5e39fbeb890a02dc42b588276eb9ce15d1d1182cea7364b0b0faa11caed3ce03fad40093c5d4d298298227844358e14434809d98c7837ab6033c0efb8d6f2b
+RUN set -e; F=/tmp/sqlpackage-feed; mkdir -p "$F"; \
+    N="microsoft.sqlpackage.${SQLPACKAGE_VERSION}.nupkg"; \
+    curl -fsSL "https://api.nuget.org/v3-flatcontainer/microsoft.sqlpackage/${SQLPACKAGE_VERSION}/${N}" -o "$F/$N"; \
+    echo "${SQLPACKAGE_NUPKG_SHA512}  $F/$N" | sha512sum -c -; \
+    printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration><packageSources><clear /><add key="local" value="%s" /></packageSources></configuration>\n' "$F" \
+      > "$F/nuget.config"; \
+    HOME=/tmp/dotnet-home dotnet tool install microsoft.sqlpackage \
+      --version "${SQLPACKAGE_VERSION}" --framework net8.0 \
+      --tool-path /opt/sqlpackage --configfile "$F/nuget.config"; \
+    rm -rf "$F" /tmp/dotnet-home; \
+    ln -s /opt/sqlpackage/sqlpackage /usr/local/bin/sqlpackage; \
+    sqlpackage /version
+
+# Python Playwright in the system Python (pulled in by nodejs). It drives the
+# bundled Chrome for Testing, so no Playwright browser is downloaded:
+#   p.chromium.launch(executable_path=os.environ["CHROME_EXECUTABLE"])
+# The build fails if its Chromium major differs from CHROME_FOR_TESTING_VERSION's.
+COPY playwright-requirements.txt /tmp/playwright-requirements.txt
+RUN set -e; \
+    uv pip install --system --break-system-packages --no-cache \
+      --require-hashes -r /tmp/playwright-requirements.txt; \
+    rm /tmp/playwright-requirements.txt; \
+    PW=$(python3 -c 'import json, pathlib, playwright; f = pathlib.Path(playwright.__file__).parent / "driver/package/browsers.json"; print(next(b["browserVersion"] for b in json.loads(f.read_text())["browsers"] if b["name"] == "chromium"))'); \
+    [ "${PW%%.*}" = "${CHROME_FOR_TESTING_VERSION%%.*}" ] \
+      || { echo "playwright targets Chromium $PW, bundled Chrome is ${CHROME_FOR_TESTING_VERSION}" >&2; exit 1; }
 
 # Plain `tmux` mode swallows Shift+Enter so Claude's prompt sees only Enter,
 # forcing users to type `\` for a literal newline. `always` is required
