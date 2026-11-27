@@ -3,6 +3,8 @@
 # --braindb forwards BRAIN_TEST_DSN, the laslo_brain_test Postgres DSN, from
 # 1Password. That DSN carries its password — test instance only.
 # --gh so the box pushes its own commits to Brain's private GitHub origin.
+# --brain-notion forwards the Notion mirror token (1Password) and the scratch
+# database id (env file) for Brain's live Notion probe (Brain 0009).
 # Cloudflare credentials only for the deploy phase.
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/_lib.sh"
@@ -42,4 +44,4 @@ if ! brain_test_db_published; then
   fi
 fi
 
-cd_test_db_run brain-test-postgres --claude-auth --gh --braindb "$brain" "$arch" "$@"
+cd_test_db_run brain-test-postgres --claude-auth --gh --braindb --brain-notion "$brain" "$arch" "$@"

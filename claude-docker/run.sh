@@ -193,7 +193,7 @@ Wrapper flags:
                       reach the brain test database. Host env var when set,
                       else 1Password via CLAUDE_DOCKER_MEPDB_OP_REF (`op read`
                       on host). The ref has a built-in default, like
-                      --rr-e2e's and --hetzner-infra's, because the flag
+                      several other flags' refs, because the flag
                       names one specific database rather than a class of
                       service:
                         op://claude-docker/brain-test-postgres/dsn
@@ -224,6 +224,13 @@ Wrapper flags:
                         op://claude-docker/brain-cf-access/username
                         op://claude-docker/brain-cf-access/credential
                       Set either to "" to switch its 1Password path off.
+  --brain-notion      Opt in to Brain's Notion mirror test credentials:
+                      forward BRAIN_NOTION_TOKEN (host env var, else op read
+                      via CLAUDE_DOCKER_BRAIN_NOTION_OP_REF, defaulted to
+                        op://claude-docker/brain-notion-token/credential
+                      "" switches the 1Password path off) and the non-secret
+                      BRAIN_NOTION_TEST_DATABASE_ID, which must be set in the
+                      env or the env file; the launch aborts without it.
   --rr-e2e            Opt in to the RingRecipe live E2Es: forward both test
                       accounts (E2E_EMAIL/E2E_PASSWORD and E2E2_*) plus the
                       non-secret SUPABASE_URL / SUPABASE_ANON_KEY, so
@@ -407,6 +414,7 @@ WITH_BRAINDB=0
 # run.sh stays opt-in (same split as CLAUDE_DOCKER_BUS_DIR).
 WITH_BRAIN=0
 [ "${CLAUDE_DOCKER_BRAIN:-}" = "1" ] && WITH_BRAIN=1
+WITH_BRAIN_NOTION=0
 WITH_RR_E2E=0
 WITH_HETZNER_INFRA=0
 WITH_CLAUDE_AUTH=0
@@ -445,6 +453,7 @@ for arg in "$@"; do
     --mepdb)        WITH_MEPDB=1 ;;
     --braindb)      WITH_BRAINDB=1 ;;
     --brain)        WITH_BRAIN=1 ;;
+    --brain-notion) WITH_BRAIN_NOTION=1 ;;
     --rr-e2e)       WITH_RR_E2E=1 ;;
     --hetzner-infra) WITH_HETZNER_INFRA=1 ;;
     --claude-auth)  WITH_CLAUDE_AUTH=1 ;;
@@ -704,6 +713,14 @@ if [ -r "$CD_ENV_FILE" ]; then
   unset cd_line cd_key cd_val
 fi
 
+# --brain-notion's database id is not a secret and has no 1Password path, so a
+# missing one is a config gap, not a failed read: say so here, before any op
+# call, rather than in the credential gate whose advice is about 1Password.
+if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TEST_DATABASE_ID:-}" ]; then
+  echo "claude-docker: --brain-notion needs BRAIN_NOTION_TEST_DATABASE_ID (not a secret): add it to $CD_ENV_FILE" >&2
+  exit 1
+fi
+
 # Named ADO profile (lib/ado-profile.sh). Resolved before ENV_VARS and before
 # any op call: it drops a host AZURE_DEVOPS_EXT_PAT before the forwarding loop
 # can pick it up, and a bad profile never reaches 1Password.
@@ -777,6 +794,9 @@ fi
 # required, so both vars travel. The id is not secret on its own but lives in
 # the same 1Password item. entrypoint.sh turns them into the "brain" MCP entry.
 [ "$WITH_BRAIN" = "1" ] && ENV_VARS+=(BRAIN_CF_ACCESS_CLIENT_ID BRAIN_CF_ACCESS_CLIENT_SECRET)
+# Brain's Notion mirror probe (laslo/brain 0009): the integration token and the
+# scratch database it may write to. The id is not secret; checked above.
+[ "$WITH_BRAIN_NOTION" = "1" ] && ENV_VARS+=(BRAIN_NOTION_TOKEN BRAIN_NOTION_TEST_DATABASE_ID)
 # Six variables, two of them secret: the account passwords. The emails are not
 # secret but come from 1Password anyway (see the read block below) — the login
 # items already hold them, so one source per account beats two. The connection
@@ -968,6 +988,8 @@ BRAINDB_OP_REF="${CLAUDE_DOCKER_BRAINDB_OP_REF-op://claude-docker/laslo-brain-te
 # password and tunnel token).
 BRAIN_CF_ID_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF-op://claude-docker/brain-cf-access/username}"
 BRAIN_CF_SECRET_OP_REF="${CLAUDE_DOCKER_BRAIN_CF_SECRET_OP_REF-op://claude-docker/brain-cf-access/credential}"
+# --brain-notion's token: a copy in vault claude-docker, for the same reason.
+BRAIN_NOTION_OP_REF="${CLAUDE_DOCKER_BRAIN_NOTION_OP_REF-op://claude-docker/brain-notion-token/credential}"
 
 # --rr-e2e's op-refs. These name an *item*, not a field, because two fields are
 # read from each (username + password) and per-field vars would be four
@@ -1081,6 +1103,10 @@ op_bin_needed_for=""
      && { { [ -z "${BRAIN_CF_ACCESS_CLIENT_ID:-}" ] && [ -n "$BRAIN_CF_ID_OP_REF" ]; } \
        || { [ -z "${BRAIN_CF_ACCESS_CLIENT_SECRET:-}" ] && [ -n "$BRAIN_CF_SECRET_OP_REF" ]; }; }; then
     op_needed=1; op_needed_for="$op_needed_for --brain"
+  fi
+  if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TOKEN:-}" ] \
+     && [ -n "$BRAIN_NOTION_OP_REF" ]; then
+    op_needed=1; op_needed_for="$op_needed_for --brain-notion"
   fi
   # Each account is paired with its own ref so the preflight still runs when
   # only one of the two needs a read (E2E_PASSWORD pre-set on the host, E2E2's
@@ -1519,6 +1545,16 @@ if [ "$WITH_BRAIN" = "1" ] && command -v op >/dev/null 2>&1; then
   fi
 fi
 
+if [ "$WITH_BRAIN_NOTION" = "1" ] && [ -z "${BRAIN_NOTION_TOKEN:-}" ] \
+   && [ -n "$BRAIN_NOTION_OP_REF" ] && command -v op >/dev/null 2>&1; then
+  brain_notion_token=$(op_read "$BRAIN_NOTION_OP_REF" || true)
+  if [ -n "$brain_notion_token" ]; then
+    BRAIN_NOTION_TOKEN="$brain_notion_token"
+    export BRAIN_NOTION_TOKEN
+    ENV_ARGS+=("-e" "BRAIN_NOTION_TOKEN")
+  fi
+fi
+
 # Fill one --rr-e2e account field from 1Password when the host has not already
 # set it. $1 = env var to fill, $2 = op:// item ref, $3 = field name. Four
 # explicit calls rather than a table, because an op:// ref contains ':' and any
@@ -1667,6 +1703,7 @@ ADO_TAG=${ADO_PROFILE:-${CLAUDE_DOCKER_ADO_LABEL:-}}
 [ "$WITH_MEPDB" = "1" ]    && DOCKER_FLAGS+=("mepdb")
 [ "$WITH_BRAINDB" = "1" ]  && DOCKER_FLAGS+=("braindb")
 [ "$WITH_BRAIN" = "1" ]    && DOCKER_FLAGS+=("brain")
+[ "$WITH_BRAIN_NOTION" = "1" ] && DOCKER_FLAGS+=("brain-notion")
 [ "$WITH_RR_E2E" = "1" ]   && DOCKER_FLAGS+=("rr-e2e")
 [ "$WITH_HETZNER_INFRA" = "1" ] && DOCKER_FLAGS+=("hetzner-infra")
 [ "$WITH_CLAUDE_AUTH" = "1" ] && DOCKER_FLAGS+=("auth")
@@ -1956,6 +1993,7 @@ cred_require() {
 # Both headers are required, so each var is asserted on its own.
 [ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_ID
 [ "$WITH_BRAIN" = "1" ]      && cred_require --brain BRAIN_CF_ACCESS_CLIENT_SECRET
+[ "$WITH_BRAIN_NOTION" = "1" ] && cred_require --brain-notion BRAIN_NOTION_TOKEN
 [ "$WITH_RR_E2E" = "1" ]     && cred_require --rr-e2e E2E_PASSWORD E2E2_PASSWORD
 [ "$WITH_HETZNER_INFRA" = "1" ] && cred_require --hetzner-infra HCLOUD_TOKEN
 
