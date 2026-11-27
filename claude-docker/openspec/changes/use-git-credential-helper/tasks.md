@@ -46,25 +46,14 @@
 ## 4. Image smoke tests (host-side, needs docker)
 
 - [x] 4.1 `docker build -t claude-code:local ./claude-docker` succeeds.
-- [ ] 4.2 No-flag invariant: `docker run --rm claude-code:local sh -c
-  'git config --system --list | grep credential || echo none'` prints
-  `none`.
-- [ ] 4.3 `--glab` with token: `docker run --rm -e GITLAB_TOKEN=glpat_fake
-  claude-code:local sh -c 'git config --system --get
-  credential.https://gitlab.com.helper'` shows a helper referencing
-  `$GITLAB_TOKEN`, and `... | grep glpat_fake` finds nothing.
-- [ ] 4.4 No URL rewrite present: same container, `git config --system
-  --get-all url.https://gitlab.com.insteadOf` prints nothing.
-- [ ] 4.5 No-leak across exits: a follow-up no-flag `docker run --rm
-  claude-code:local sh -c 'git config --system --list'` shows no
-  `credential.*` entries.
-- [ ] 4.6 End-to-end: `claude-docker --glab ~/repo`, then in-container
-  `git remote -v` / `git fetch -v` show bare URLs (no `oauth2:…@`), and a
-  private clone / `tofu init` against an SBP GitLab module source succeeds.
+- [ ] 4.2 No flag: `docker run --rm claude-code:local sh -c 'git config --list | grep credential || echo none'`. Pass: prints `none`. Use `--list`, not `--system`: the helper lives in `/tmp/claude-docker-gitconfig`, included from `/etc/gitconfig`, and `--system` does not follow includes.
+- [ ] 4.3 `docker run --rm -e GITLAB_TOKEN=glpat_fake claude-code:local sh -c 'git config --get credential.https://gitlab.com.helper; git config --list | grep -c glpat_fake'`. Pass: the helper line references `$GITLAB_TOKEN`, and the count is 0.
+- [ ] 4.4 Same container as 4.3: `git config --get-all url.https://gitlab.com.insteadOf; echo rc=$?`. Pass: prints nothing, then `rc=1`.
+- [ ] 4.5 After 4.3, a fresh no-flag `docker run --rm claude-code:local sh -c 'git config --list | grep -c credential'`. Pass: 0.
+- [ ] 4.6 `claude-docker --glab <repo>`, then `git remote -v` (bare https URLs, no token), `git fetch -v` and a private clone of an SBP GitLab repo. Pass: URLs are bare and fetch and clone succeed.
 
 ## 5. Validation
 
 - [x] 5.1 `openspec validate use-git-credential-helper --strict` exits 0.
 - [x] 5.2 `claude-docker --help` round-trips unchanged (no new flags).
-- [ ] 5.3 Archive `add-git-insteadof` is left intact; this change MODIFIES
-  its requirement rather than re-adding one.
+- [ ] 5.3 At archive time: archive `add-git-insteadof` first (see its 7.1), then this change; check `git log -- openspec/changes/archive/*add-git-insteadof*` shows the archived folder unchanged by this archive.

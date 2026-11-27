@@ -30,4 +30,4 @@
 - [x] 4.2 `python3 -c "import json; json.load(open('examples/settings.docker.json'))"` passes (valid JSON after edit).
 - [x] 4.3 Throwaway-repo smoke: from a NON-repo parent, a `touch` on a file inside a subrepo records that subrepo; after a dirty file + untracked file, `stop` appends a record with `dirty_tracked: 1`, `untracked: 1` and warns to stderr; index cleaned up on SessionEnd; a session touching no repo no-ops.
 - [x] 4.4 `openspec validate add-session-worklog --strict` exits 0.
-- [ ] 4.5 In-container check (deferred to next image build + seed sync): a real session run from `/workspaces/dev` that edits a subrepo and leaves it dirty prints the warning and writes `worklog.ndjson` in that subrepo; a clean session is silent.
+- [ ] 4.5 In a `cd-dev` session (`/workspaces/dev`), leave a tracked file dirty in one subrepo and end the session. Pass: the SessionEnd hook prints the dirty-tree warning and `.git/claude-sessions/worklog.ndjson` in that subrepo gains a record listing the file. (32 in-box records exist, none from a dirty subrepo.)

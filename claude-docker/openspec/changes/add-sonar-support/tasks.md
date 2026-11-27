@@ -24,7 +24,7 @@ Not run as part of this retroactive record; the stub-docker checks recorded in 4
 - [x] 4.2 Op-ref fallback yields a non-empty `SONAR_TOKEN`
 - [x] 4.3 No-flag invariant: neither variable reaches the container without `--sonar`
 - [x] 4.4 Fail closed: `SONAR_HOST_URL` alone does not satisfy the flag
-- [ ] 4.5 In-container quality-gate status call returns 200 for a known project
+- [ ] 4.5 In a `cd-ct` box run `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $SONAR_TOKEN" 'https://sonarcloud.io/api/qualitygates/project_status?projectKey=<an SBP.* key>'`. Pass: prints 200.
 
 ## 5. Documentation
 

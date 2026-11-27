@@ -14,7 +14,7 @@
 
 Not run as part of this retroactive record; the ff89abb commit message records no verification.
 
-- [ ] 3.1 With the flag, a host re-login is picked up inside a running container without a 401
+- [ ] 3.1 Start `claude-docker --claude-auth <dir>`. Run `/login` on the host so `<config-dir>/.credentials.json` changes. In the still-running box, send a prompt. Pass: no 401 and no `/login` prompt in the box.
 - [x] 3.2 With the flag and no host credential file, the launch exits 1 before `docker run`
 - [x] 3.3 Without the flag, `/root/.claude/.credentials.json` is not the host file
 

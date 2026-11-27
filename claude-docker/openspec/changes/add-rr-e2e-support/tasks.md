@@ -18,7 +18,7 @@
 
 Not run as part of this retroactive record. The 4417697 commit message records a check against live 1Password with a fake `docker` on PATH showing all six variables forwarded.
 
-- [ ] 3.1 `claude-docker --supabase --rr-e2e ~/ringrecipe` then `tool/e2e.sh live` from `Flutter/` passes
+- [ ] 3.1 In a `cd-rr` box (`--supabase --rr-e2e`) run `cd Flutter && tool/e2e.sh live`. Pass: exit 0 with no "missing variable" lines.
 - [x] 3.2 `CLAUDE_DOCKER_RR_E2E2_OP_ITEM=""` launches with only the first account
 - [x] 3.3 No-flag invariant: none of the six variables reach the container without `--rr-e2e`
 - [x] 3.4 Fail closed: both item refs set to `""` and no host passwords → exits non-zero before `docker run`

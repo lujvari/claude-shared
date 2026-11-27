@@ -140,7 +140,7 @@ Rebuild the image for 2.10. Only a fresh volume depends on it.
   - Scopes: Code → Read.
   
   Store it in 1Password vault `claude-docker`, item `AzureDevOps PAT APG`, field `credential`. Copy a clone URL from the ADO web UI and check the org's spelling and case against `CLAUDE_DOCKER_ADO_APG_ORGS`. **Proof:** `op read "op://claude-docker/AzureDevOps PAT APG/credential" | wc -c` prints a non-zero count.
-- [ ] 6.2 No install step is needed: `~/bin/cd-*` are symlinks into the checkout. Rebuild the image (the `docker build` line in README "one-off migration") so the Dockerfile mountpoints are in place before a volume is ever recreated.
+- [ ] 6.2 On WSL: `docker run --rm --entrypoint stat claude-code:local -c '%U %n' /home/claude/.azure /home/claude/.azure/azuredevops /home/claude/.azure-devops`. Pass: `claude` for all three. If not, rebuild with the README "one-off migration" `docker build` line and re-run.
 - [x] 6.3 Run `AZURE_DEVOPS_EXT_PAT=dummy cd-apg`. Check:
   - one note that the host PAT was dropped;
   - tag `ado:apg`;

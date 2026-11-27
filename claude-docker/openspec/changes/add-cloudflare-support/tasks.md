@@ -21,7 +21,7 @@ Not run as part of this retroactive record. The 1fcfdc6 commit message records `
 - [x] 3.2 Op-ref fallback yields a non-empty `CLOUDFLARE_API_TOKEN`
 - [x] 3.3 No-flag invariant: neither variable reaches the container without `--cloudflare`
 - [x] 3.4 Fail closed: `--cloudflare` with no token source exits non-zero before `docker run`
-- [ ] 3.5 `npx wrangler@3 whoami` inside the container authenticates as the token's identity
+- [ ] 3.5 In a `cd-board` box (`--cloudflare`, real token), run `npx wrangler@3 whoami`. Pass: exit 0 and it names the token's account.
 
 ## 4. Documentation
 

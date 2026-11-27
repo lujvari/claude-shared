@@ -14,9 +14,9 @@
 
 Not run as part of this retroactive record; the 210c557 and b95c7fa commit messages record no verification.
 
-- [ ] 3.1 Mounting the dev root: writing under the launcher directory inside the container fails; writing elsewhere under `tools/` succeeds
-- [ ] 3.2 Same mount with `--tools`: writing under the launcher directory succeeds
-- [ ] 3.3 Mounting the launcher directory itself: it is writable without `--tools`
+- [ ] 3.1 Launch `cd-dev` (dev root mounted) without `--tools`. Pass: `touch /workspaces/dev/tools/claude-shared/claude-docker/x` fails with EROFS, and `touch` on a sibling dir under `tools/` succeeds. Delete the test files.
+- [ ] 3.2 Same launch plus `--tools`. Pass: `touch` in the launcher dir succeeds (delete the file after).
+- [ ] 3.3 Launch a box that mounts only the claude-docker repo dir, no `--tools`. Pass: `touch` in it succeeds and `findmnt` shows no nested `:ro` mount on it.
 
 ## 4. Documentation
 

@@ -29,10 +29,10 @@ Scratch dev tree: copy of `claude-docker/` (run.sh, lib/, launchers/), `sbp/ai/i
 
 ## 5. Proof on the host (WSL, by the owner)
 
-- [ ] 5.1 Relaunch `cd-inat`; in the box: `gh api user --jq .login` prints `lujvarisbp` (the inat PAT's account, not the personal one).
-- [ ] 5.2 `ls -A ~/.config/gh` shows no `hosts.yml`.
-- [ ] 5.3 `glab auth status` still works for sbp.gitlab.
-- [ ] 5.4 `gh api repos/schubergphilis/inat --jq .full_name`: works once the org owner has approved the token; 403/404 before.
+- [ ] 5.1 On WSL relaunch `cd-inat`; in the box run `gh api user --jq .login`. Pass: prints `lujvarisbp`, not the personal login.
+- [ ] 5.2 In the same cd-inat box run `ls -A ~/.config/gh`. Pass: no `hosts.yml`.
+- [ ] 5.3 In the same cd-inat box run `glab auth status`. Pass: authenticated to sbp.gitlab.
+- [ ] 5.4 In the same cd-inat box run `gh api repos/schubergphilis/inat --jq .full_name`. Pass: prints `schubergphilis/inat`. A 403/404 means the org owner has not approved the PAT yet; chase that, don't change the box.
 
 ## 6. Validation and hand-off
 

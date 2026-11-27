@@ -22,10 +22,10 @@ If the real `run.sh` can't be driven with stubs in the box, say which step block
 
 ## 4. Proof on the host (WSL, by the owner)
 
-- [ ] 4.1 For each of `cd-mep`, `cd-brain`, `cd-board`, run inside the box: `pwd; echo $AGENT_BUS_SELF; ls /workspaces/architecture | head -3; touch /workspaces/architecture/.probe-$AGENT_BUS_SELF`. Expect the project's own directory and key.
-- [ ] 4.2 On the host, `ls -a <dev>/laslo/architecture/.probe-*` lists the three probe files, then remove them.
-- [ ] 4.3 In `cd-brain`: `git -C /workspaces/architecture remote -v` and `git -C /workspaces/architecture ls-remote origin HEAD`, so pushing the model from a box is known to work or not.
-- [ ] 4.4 `cd-brain -- --continue` resumes the last brain conversation.
+- [ ] 4.1 In each of `cd-mep`, `cd-brain`, `cd-board` run `pwd; echo $AGENT_BUS_SELF; ls /workspaces/architecture | head -3; touch /workspaces/architecture/.probe-$AGENT_BUS_SELF`. Pass: `pwd` is `/workspaces/<that project>`, the bus key is that project's, the model files are listed.
+- [ ] 4.2 After 4.1, on WSL: `ls -a <dev>/laslo/architecture/.probe-*` lists three files, one per project key. Then `rm` them.
+- [ ] 4.3 In `cd-brain`: `git -C /workspaces/architecture remote -v; git -C /workspaces/architecture ls-remote origin HEAD`. A sha means push from the box works; "no remote" or an auth error means it doesn't. Record which in the launchers README.
+- [ ] 4.4 On WSL run `cd-brain -- --continue`. Pass: the last brain conversation reopens, not a fresh session.
 
 ## 5. Validation and hand-off
 

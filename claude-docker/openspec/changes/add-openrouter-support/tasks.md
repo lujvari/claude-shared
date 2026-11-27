@@ -24,7 +24,7 @@ Not run as part of this retroactive record; the 58f03d0 commit message records n
 - [x] 4.2 Op-ref fallback yields a non-empty `OPENROUTER_API_KEY`
 - [x] 4.3 No-flag invariant: the key is absent without `--openrouter`
 - [x] 4.4 Fail closed: no key source → exits non-zero before `docker run`
-- [ ] 4.5 In-container `curl` to `https://openrouter.ai/api/v1/key` returns 200 with the key's `limit`
+- [ ] 4.5 In a `cd-rr` box run `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $OPENROUTER_API_KEY" https://openrouter.ai/api/v1/key`. Pass: prints 200 (the JSON body carries a numeric `limit`; don't print the body).
 
 ## 5. Documentation
 

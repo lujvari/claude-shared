@@ -31,4 +31,4 @@
 - [x] 5.1 `bash -n run.sh lib/token-probe.sh`
 - [x] 5.2 `python3 -m unittest lib/test_token_probe.py hooks/test_deny_secret_reads.py`
 - [x] 5.3 `openspec validate add-token-probe --strict`
-- [ ] 5.4 Owner: live launch with one deliberately bad token prints the warning and still starts
+- [ ] 5.4 On WSL run `GH_TOKEN=bogus claude-docker --gh <dir>`. Pass: stderr shows `--gh token rejected (HTTP 401)`, the box still starts, and the statusline shows a red `token-dead:gh`.

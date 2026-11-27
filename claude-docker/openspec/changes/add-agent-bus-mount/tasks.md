@@ -24,7 +24,7 @@ Not run as part of this retroactive record; the 2a666b0 commit message records n
 - [x] 4.1 With an existing bus dir, a box sees only its own `/bus`; writing under `/bus/in` fails, writing under `/bus/out` succeeds
 - [x] 4.2 Two boxes with different first workspaces cannot see each other's mailbox
 - [x] 4.3 `--no-bus` mounts nothing and sets no `AGENT_BUS_*` variable
-- [ ] 4.4 Missing bus dir and unsafe key each warn and launch without a mailbox
+- [ ] 4.4 Unsafe key: launch from a workspace path containing a space (any dir like `/tmp/a b`). Pass: `run.sh` warns "not a safe name" and the box starts with no `/bus` mount. (Missing-dir half verified by docker-shim on 2026-11-27.)
 - [x] 4.5 Mailbox is present under `--ro` and `--ephemeral`
 
 ## 5. Documentation
