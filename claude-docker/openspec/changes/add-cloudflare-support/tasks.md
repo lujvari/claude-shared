@@ -17,10 +17,10 @@
 
 Not run as part of this retroactive record. The 1fcfdc6 commit message records `bash -n`, `run.sh --cloudflare --help`, and a docker-shim check that `docker run` receives the forwarded variables.
 
-- [ ] 3.1 Host env token and account id are both visible inside the container under `--cloudflare`
-- [ ] 3.2 Op-ref fallback yields a non-empty `CLOUDFLARE_API_TOKEN`
-- [ ] 3.3 No-flag invariant: neither variable reaches the container without `--cloudflare`
-- [ ] 3.4 Fail closed: `--cloudflare` with no token source exits non-zero before `docker run`
+- [x] 3.1 Host env token and account id are both visible inside the container under `--cloudflare`
+- [x] 3.2 Op-ref fallback yields a non-empty `CLOUDFLARE_API_TOKEN`
+- [x] 3.3 No-flag invariant: neither variable reaches the container without `--cloudflare`
+- [x] 3.4 Fail closed: `--cloudflare` with no token source exits non-zero before `docker run`
 - [ ] 3.5 `npx wrangler@3 whoami` inside the container authenticates as the token's identity
 
 ## 4. Documentation
@@ -31,5 +31,5 @@ Not run as part of this retroactive record. The 1fcfdc6 commit message records `
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-cloudflare-support --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-cloudflare-support --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--cloudflare`

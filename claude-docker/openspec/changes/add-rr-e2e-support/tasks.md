@@ -19,9 +19,9 @@
 Not run as part of this retroactive record. The 4417697 commit message records a check against live 1Password with a fake `docker` on PATH showing all six variables forwarded.
 
 - [ ] 3.1 `claude-docker --supabase --rr-e2e ~/ringrecipe` then `tool/e2e.sh live` from `Flutter/` passes
-- [ ] 3.2 `CLAUDE_DOCKER_RR_E2E2_OP_ITEM=""` launches with only the first account
-- [ ] 3.3 No-flag invariant: none of the six variables reach the container without `--rr-e2e`
-- [ ] 3.4 Fail closed: both item refs set to `""` and no host passwords → exits non-zero before `docker run`
+- [x] 3.2 `CLAUDE_DOCKER_RR_E2E2_OP_ITEM=""` launches with only the first account
+- [x] 3.3 No-flag invariant: none of the six variables reach the container without `--rr-e2e`
+- [x] 3.4 Fail closed: both item refs set to `""` and no host passwords → exits non-zero before `docker run`
 
 ## 4. Documentation
 
@@ -31,5 +31,5 @@ Not run as part of this retroactive record. The 4417697 commit message records a
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-rr-e2e-support --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-rr-e2e-support --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--rr-e2e`

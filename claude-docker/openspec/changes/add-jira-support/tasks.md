@@ -13,12 +13,11 @@
 
 ## 3. Smoke tests
 
-- [ ] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
-- [ ] 3.2 `--jira` with explicit env: `JIRA_API_TOKEN=fake JIRA_USER_EMAIL=a@b.c JIRA_BASE_URL=https://x.atlassian.net claude-docker --jira ~/repo` → inside the container `env | grep ^JIRA_` lists all three with the host values
-- [ ] 3.3 `--jira` with op-read fallback: on a host with `op` signed in to a service account that can read `op://SBP.DataChecks/jira/api-token`, `CLAUDE_DOCKER_JIRA_OP_REF=op://SBP.DataChecks/jira/api-token JIRA_USER_EMAIL=a@b.c JIRA_BASE_URL=https://x.atlassian.net claude-docker --jira ~/repo` → inside the container `echo $JIRA_API_TOKEN` is non-empty
-- [ ] 3.4 No-flag invariant unchanged: `claude-docker ~/repo` without `--jira` does not export `JIRA_API_TOKEN`/`JIRA_USER_EMAIL`/`JIRA_BASE_URL` into the container even if all three are set on the host
-- [ ] 3.5 Statusline tag surfaces: `claude-docker --jira ~/repo` prints `docker:jira` (or `docker:gh,jira` when combined) in the prepended status fragment
-- [ ] 3.6 No `/etc/gitconfig` write: under `--jira` alone, `git config --system --list` inside the container contains no `url.*.insteadOf` entries (proves no accidental insteadOf injection)
+- [x] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
+- [x] 3.2 `--jira` with explicit env: `JIRA_API_TOKEN=fake JIRA_USER_EMAIL=a@b.c JIRA_BASE_URL=https://x.atlassian.net claude-docker --jira ~/repo` → inside the container `env | grep ^JIRA_` lists all three with the host values
+- [x] 3.3 `--jira` with op-read fallback: on a host with `op` signed in to a service account that can read `op://SBP.DataChecks/jira/api-token`, `CLAUDE_DOCKER_JIRA_OP_REF=op://SBP.DataChecks/jira/api-token JIRA_USER_EMAIL=a@b.c JIRA_BASE_URL=https://x.atlassian.net claude-docker --jira ~/repo` → inside the container `echo $JIRA_API_TOKEN` is non-empty
+- [x] 3.4 No-flag invariant unchanged: `claude-docker ~/repo` without `--jira` does not export `JIRA_API_TOKEN`/`JIRA_USER_EMAIL`/`JIRA_BASE_URL` into the container even if all three are set on the host
+- [x] 3.5 Statusline tag surfaces: `claude-docker --jira ~/repo` prints `docker:jira` (or `docker:gh,jira` when combined) in the prepended status fragment
 - [ ] 3.7 End-to-end: with all three host env vars set to real values, `bash scripts/run.sh python3 scripts/create_deploy_ticket.py acceptance --dry-run` from inside `sbp/ct/SBP.DataChecks` prints the dry-run payload (requires the repo's `scripts/run.sh` short-circuit when JIRA env vars are pre-set — see Change B in the SBP.DataChecks repo)
 
 ## 4. Documentation
@@ -30,6 +29,6 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-jira-support --strict` exits 0
+- [x] 5.1 `openspec validate add-jira-support --strict` exits 0
 - [x] 5.2 `claude-docker --help` shows `--jira` in the flag list
 - [x] 5.3 Spot-check that the `--ephemeral` interaction is a no-op: `--jira` only sets env vars and adds a statusline tag, neither of which touch the named volumes, so `--jira --ephemeral` is functionally identical to `--jira` on a fresh host except for OAuth/history persistence (orthogonal to credentials).

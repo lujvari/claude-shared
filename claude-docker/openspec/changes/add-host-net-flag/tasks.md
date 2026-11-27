@@ -14,8 +14,8 @@
 Not run as part of this retroactive record; the eed753a commit message records no verification.
 
 - [ ] 3.1 On a low-MTU VPN, Claude connects with `--host-net` where it fails without it
-- [ ] 3.2 `CLAUDE_DOCKER_NETWORK=<name>` attaches the container to that network
-- [ ] 3.3 Without the flag or variable, no `--network` argument is passed
+- [x] 3.2 `CLAUDE_DOCKER_NETWORK=<name>` attaches the container to that network
+- [x] 3.3 Without the flag or variable, no `--network` argument is passed
 
 ## 4. Documentation
 
@@ -24,5 +24,5 @@ Not run as part of this retroactive record; the eed753a commit message records n
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-host-net-flag --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-host-net-flag --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--host-net`

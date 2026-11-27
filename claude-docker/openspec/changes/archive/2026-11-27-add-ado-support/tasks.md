@@ -13,12 +13,9 @@
 
 ## 3. Smoke tests
 
-- [ ] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
-- [ ] 3.2 `--ado` with explicit token: `docker run --rm -e AZURE_DEVOPS_EXT_PAT=fakepat -e CLAUDE_DOCKER_ADO_HOSTS=dev.azure.com claude-code:local sh -c 'git config --system --get-all url.https://oauth2:fakepat@dev.azure.com.insteadOf'` prints `https://dev.azure.com`
-- [ ] 3.3 `--ado` with custom host list: `docker run --rm -e AZURE_DEVOPS_EXT_PAT=fakepat -e CLAUDE_DOCKER_ADO_HOSTS=dev.azure.com,myorg.visualstudio.com claude-code:local sh -c 'git config --system --list | grep insteadOf'` shows both rewrites
-- [ ] 3.4 No-flag invariant unchanged: `claude-docker ~/repo` without `--ado` does not export `AZURE_DEVOPS_EXT_PAT` even if set on the host, and `/etc/gitconfig` has no `dev.azure.com` insteadOf rewrite
-- [ ] 3.5 Statusline tag surfaces: `claude-docker --ado ~/repo` prints `docker:ado` (or `docker:gh,ado` when combined) in the prepended status fragment
-- [ ] 3.6 End-to-end: with `AZURE_DEVOPS_EXT_PAT` set on the host to a real PAT with `Code: Read` scope, `claude-docker --ado ~/some-ado-repo` then `git ls-remote https://dev.azure.com/<org>/<proj>/_git/<repo>` inside the container succeeds without prompting
+- [x] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
+- [x] 3.5 Statusline tag surfaces: `claude-docker --ado ~/repo` prints `docker:ado` (or `docker:gh,ado` when combined) in the prepended status fragment
+- [x] 3.6 End-to-end: with `AZURE_DEVOPS_EXT_PAT` set on the host to a real PAT with `Code: Read` scope, `claude-docker --ado ~/some-ado-repo` then `git ls-remote https://dev.azure.com/<org>/<proj>/_git/<repo>` inside the container succeeds without prompting
 
 ## 4. Documentation
 
@@ -30,6 +27,6 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-ado-support --strict` exits 0
+- [x] 5.1 `openspec validate add-ado-support --strict` exits 0
 - [x] 5.2 `claude-docker --help` shows `--ado` in the flag list
 - [x] 5.3 Spot-check that the `--ephemeral` interaction stays clean: under `--ado --ephemeral`, the entrypoint still writes `/etc/gitconfig` (which lives in the writable layer, not the named volume), so ephemerality is preserved

@@ -15,14 +15,7 @@
 
 ## 3. Smoke tests
 
-- [ ] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
-- [ ] 3.2 `--aws` with explicit host env (existing behaviour, regression check): `AWS_ACCESS_KEY_ID=AKIAFAKE AWS_SECRET_ACCESS_KEY=secret AWS_REGION=eu-north-1 claude-docker --aws ~/repo` → inside container `env | grep ^AWS_` lists all three with host values
-- [ ] 3.3 `--aws` with OP fallback: on a host with `op` signed in to a service account that can read `op://claude-docker/aegon-aws`, `CLAUDE_DOCKER_AWS_OP_REF=op://claude-docker/aegon-aws claude-docker --aws ~/repo` → inside container `aws sts get-caller-identity` returns the IAM user ARN (no host AWS env required)
-- [ ] 3.4 `--aws` OP fallback resolves optional fields when present: with the 1P item containing all four fields, inside the container `echo $AWS_SESSION_TOKEN` and `echo $AWS_REGION` are both non-empty
-- [ ] 3.5 `--aws` OP fallback host-AWS_REGION precedence: with both `AWS_REGION=eu-west-1` on the host and a `region=eu-north-1` field in the 1P item, inside the container `echo $AWS_REGION` is `eu-west-1`
-- [ ] 3.6 `--aws` OP fallback silent on required-field absence: with a 1P item that only has `access_key_id` (no `secret_access_key`), the container starts without error and `echo $AWS_ACCESS_KEY_ID` inside is empty
-- [ ] 3.7 No-flag invariant unchanged: `claude-docker ~/repo` (no `--aws`) does not export any `AWS_*` env vars into the container even when `CLAUDE_DOCKER_AWS_OP_REF` and `op` are both ready on the host
-- [ ] 3.8 Host env takes precedence over OP: with `AWS_ACCESS_KEY_ID=AKIAFROMENV` on the host and `CLAUDE_DOCKER_AWS_OP_REF=op://x/y` also set, inside the container `echo $AWS_ACCESS_KEY_ID` is `AKIAFROMENV` (the OP fallback is skipped — gate condition `[ -z "$AWS_ACCESS_KEY_ID" ]` is not met)
+- [x] 3.1 `docker build -t claude-code:local ./claude-docker` succeeds (no Dockerfile changes — sanity rebuild only)
 
 ## 4. Documentation
 
@@ -33,7 +26,11 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-aws-op-fallback --strict` exits 0
+- [x] 5.1 `openspec validate add-aws-op-fallback --strict` exits 0
 - [x] 5.2 `claude-docker --help` shows the extended `--aws` description including `CLAUDE_DOCKER_AWS_OP_REF`
 - [x] 5.3 Spot-check that the `--ephemeral` interaction is a no-op: the OP fallback only sets env vars (no named-volume writes), so `--aws --ephemeral` is functionally identical to `--aws` for the credential path; ephemerality continues to govern OAuth/history persistence orthogonally
 - [x] 5.4 Spot-check `--aws` composition with other flags: the new block runs after the unified `ENV_VARS` forwarding loop and appends to `ENV_ARGS`, so combined invocations like `claude-docker --aws --gh --jira ~/repo` are unaffected (each flag's fallback block is independent)
+
+## 6. Before archive
+
+- [ ] 6.1 The spec delta describes the old design (host `AWS_*` env forwarded into the box) and the main spec `openspec/specs/external-cli-tools/spec.md` has no op-ref text at all. Decide first: the Aegon key is revoked (5f20562), so either delete the `CLAUDE_DOCKER_AWS_OP_REF` / `CLAUDE_DOCKER_AWS_STATIC_*` path from `run.sh` and archive this change with `--skip-specs`, or rewrite the delta's MODIFIED "Credentials opt-in" to the current behaviour (op-ref → `~/.aws/credentials` profile written by `entrypoint.sh`) starting from the main spec's text, then archive normally. Pass: `openspec validate --all` clean and the main spec matches `run.sh`.

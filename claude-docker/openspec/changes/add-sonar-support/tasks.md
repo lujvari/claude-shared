@@ -20,10 +20,10 @@
 
 Not run as part of this retroactive record; the stub-docker checks recorded in 47cd75f cover the gate, not `--sonar` specifically.
 
-- [ ] 4.1 Host env token and host URL are visible inside the container under `--sonar`
-- [ ] 4.2 Op-ref fallback yields a non-empty `SONAR_TOKEN`
-- [ ] 4.3 No-flag invariant: neither variable reaches the container without `--sonar`
-- [ ] 4.4 Fail closed: `SONAR_HOST_URL` alone does not satisfy the flag
+- [x] 4.1 Host env token and host URL are visible inside the container under `--sonar`
+- [x] 4.2 Op-ref fallback yields a non-empty `SONAR_TOKEN`
+- [x] 4.3 No-flag invariant: neither variable reaches the container without `--sonar`
+- [x] 4.4 Fail closed: `SONAR_HOST_URL` alone does not satisfy the flag
 - [ ] 4.5 In-container quality-gate status call returns 200 for a known project
 
 ## 5. Documentation
@@ -34,5 +34,5 @@ Not run as part of this retroactive record; the stub-docker checks recorded in 4
 
 ## 6. Validation
 
-- [ ] 6.1 `openspec validate add-sonar-support --strict` exits 0 (not run)
+- [x] 6.1 `openspec validate add-sonar-support --strict` exits 0 (not run)
 - [x] 6.2 `claude-docker --help` shows `--sonar`

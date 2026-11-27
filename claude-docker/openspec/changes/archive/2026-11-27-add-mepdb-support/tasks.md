@@ -17,10 +17,10 @@
 
 Not run as part of this retroactive record. The a9441e6 commit message records `bash -n`, the help rendering, and docker/op-shim checks for the default ref, an override and `""`.
 
-- [ ] 3.1 Default ref against live 1Password: `claude-docker --mepdb ~/repo` → `psql "$POSTGRES_TEST_URL" -c 'select 1'` succeeds inside the container
-- [ ] 3.2 Override ref and `CLAUDE_DOCKER_MEPDB_OP_REF=""` behave as documented
-- [ ] 3.3 No-flag invariant: `POSTGRES_TEST_URL` is absent without `--mepdb`
-- [ ] 3.4 Fail closed: `--mepdb` with the ref set to `""` and no host var exits non-zero before `docker run`
+- [x] 3.1 Default ref against live 1Password: `claude-docker --mepdb ~/repo` → `psql "$POSTGRES_TEST_URL" -c 'select 1'` succeeds inside the container
+- [x] 3.2 Override ref and `CLAUDE_DOCKER_MEPDB_OP_REF=""` behave as documented
+- [x] 3.3 No-flag invariant: `POSTGRES_TEST_URL` is absent without `--mepdb`
+- [x] 3.4 Fail closed: `--mepdb` with the ref set to `""` and no host var exits non-zero before `docker run`
 
 ## 4. Documentation
 
@@ -30,5 +30,5 @@ Not run as part of this retroactive record. The a9441e6 commit message records `
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-mepdb-support --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-mepdb-support --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--mepdb`

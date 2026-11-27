@@ -13,11 +13,11 @@ All Claude session files, credentials, and project records SHALL live in a named
 #### Scenario: Sessions survive exit
 
 - **WHEN** the user exits a Claude session and relaunches the container
-- **THEN** prior session files under `/root/.claude/projects/` remain readable
+- **THEN** prior session files under `/home/claude/.claude/projects/` remain readable
 
 ### Requirement: Single shared store across workspaces
 
-Sessions from every workspace MUST live under the same `/root/.claude/projects/` tree so `claude --resume` Ctrl+A lists them together.
+Sessions from every workspace MUST live under the same `/home/claude/.claude/projects/` tree so `claude --resume` Ctrl+A lists them together.
 
 #### Scenario: Cross-workspace listing
 
@@ -32,5 +32,5 @@ Sessions from every workspace MUST live under the same `/root/.claude/projects/`
 
 - **GIVEN** a prior run completed with session history in `claude-code-home`
 - **WHEN** user runs `claude-docker --ephemeral ~/repo`
-- **THEN** `/root/.claude/projects/` starts empty inside the new container
-- **AND** on exit, no writes under `/root/` or `/root/.claude/` are retained in either named volume
+- **THEN** `/home/claude/.claude/projects/` starts empty inside the new container
+- **AND** on exit, no writes under `/home/claude/` or `/home/claude/.claude/` are retained in either named volume

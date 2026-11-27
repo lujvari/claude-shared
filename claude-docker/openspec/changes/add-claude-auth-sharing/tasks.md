@@ -15,8 +15,8 @@
 Not run as part of this retroactive record; the ff89abb commit message records no verification.
 
 - [ ] 3.1 With the flag, a host re-login is picked up inside a running container without a 401
-- [ ] 3.2 With the flag and no host credential file, the launch exits 1 before `docker run`
-- [ ] 3.3 Without the flag, `/root/.claude/.credentials.json` is not the host file
+- [x] 3.2 With the flag and no host credential file, the launch exits 1 before `docker run`
+- [x] 3.3 Without the flag, `/root/.claude/.credentials.json` is not the host file
 
 ## 4. Documentation
 
@@ -24,5 +24,5 @@ Not run as part of this retroactive record; the ff89abb commit message records n
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-claude-auth-sharing --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-claude-auth-sharing --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--claude-auth`

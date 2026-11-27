@@ -31,13 +31,13 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 Reword the `--gh` / `--glab` / `--ado` Auth model rows in
+- [x] 3.1 Reword the `--gh` / `--glab` / `--ado` Auth model rows in
   `README.md`: the forwarded token now drives a per-host git *credential
   helper* (not an `insteadOf` URL rewrite); the token stays out of git URL
   output and out of `/etc/gitconfig`.
-- [ ] 3.2 Update the "Private git module fetch" subsection to match
+- [x] 3.2 Update the "Private git module fetch" subsection to match
   (credential helper, bare URLs, env-var-read-at-auth-time).
-- [ ] 3.3 Update the Threat model bullet: `--gh`/`--glab` make the token
+- [x] 3.3 Update the Threat model bullet: `--gh`/`--glab` make the token
   available to in-container git via a credential helper that reads the
   forwarded env var — same blast radius as the env var, and (unlike the
   prior insteadOf) the secret no longer appears in git URL output or in a
@@ -45,7 +45,7 @@
 
 ## 4. Image smoke tests (host-side, needs docker)
 
-- [ ] 4.1 `docker build -t claude-code:local ./claude-docker` succeeds.
+- [x] 4.1 `docker build -t claude-code:local ./claude-docker` succeeds.
 - [ ] 4.2 No-flag invariant: `docker run --rm claude-code:local sh -c
   'git config --system --list | grep credential || echo none'` prints
   `none`.
@@ -64,7 +64,7 @@
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate use-git-credential-helper --strict` exits 0.
-- [ ] 5.2 `claude-docker --help` round-trips unchanged (no new flags).
+- [x] 5.1 `openspec validate use-git-credential-helper --strict` exits 0.
+- [x] 5.2 `claude-docker --help` round-trips unchanged (no new flags).
 - [ ] 5.3 Archive `add-git-insteadof` is left intact; this change MODIFIES
   its requirement rather than re-adding one.

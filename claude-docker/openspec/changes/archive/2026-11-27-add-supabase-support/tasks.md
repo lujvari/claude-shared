@@ -17,11 +17,11 @@
 
 Not run as part of this retroactive record. The 8551b47 commit message records `bash -n` and `run.sh --supabase --help` checks plus a real-launch check; the items below were never written down as a test plan.
 
-- [ ] 3.1 `SUPABASE_ACCESS_TOKEN=fake claude-docker --supabase ~/repo` → the variable is set inside the container
-- [ ] 3.2 Op-ref fallback: with the host var unset and `CLAUDE_DOCKER_SUPABASE_OP_REF` pointing at a readable item, the variable is non-empty inside the container
-- [ ] 3.3 No-flag invariant: without `--supabase` the variable is absent inside the container even when set on the host
-- [ ] 3.4 Fail closed: `--supabase` with neither source set exits non-zero before `docker run`; `CLAUDE_DOCKER_OP_OPTIONAL=1` launches anyway
-- [ ] 3.5 An MCP entry whose env is `"${SUPABASE_ACCESS_TOKEN}"` starts and authenticates
+- [x] 3.1 `SUPABASE_ACCESS_TOKEN=fake claude-docker --supabase ~/repo` → the variable is set inside the container
+- [x] 3.2 Op-ref fallback: with the host var unset and `CLAUDE_DOCKER_SUPABASE_OP_REF` pointing at a readable item, the variable is non-empty inside the container
+- [x] 3.3 No-flag invariant: without `--supabase` the variable is absent inside the container even when set on the host
+- [x] 3.4 Fail closed: `--supabase` with neither source set exits non-zero before `docker run`; `CLAUDE_DOCKER_OP_OPTIONAL=1` launches anyway
+- [x] 3.5 An MCP entry whose env is `"${SUPABASE_ACCESS_TOKEN}"` starts and authenticates
 
 ## 4. Documentation
 
@@ -32,5 +32,5 @@ Not run as part of this retroactive record. The 8551b47 commit message records `
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-supabase-support --strict` exits 0 (not run; this record was written without the openspec CLI)
+- [x] 5.1 `openspec validate add-supabase-support --strict` exits 0 (not run; this record was written without the openspec CLI)
 - [x] 5.2 `claude-docker --help` shows `--supabase`

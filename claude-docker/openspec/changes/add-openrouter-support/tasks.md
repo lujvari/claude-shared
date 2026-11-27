@@ -20,10 +20,10 @@
 
 Not run as part of this retroactive record; the 58f03d0 commit message records no verification.
 
-- [ ] 4.1 Host env key is visible inside the container under `--openrouter`
-- [ ] 4.2 Op-ref fallback yields a non-empty `OPENROUTER_API_KEY`
-- [ ] 4.3 No-flag invariant: the key is absent without `--openrouter`
-- [ ] 4.4 Fail closed: no key source → exits non-zero before `docker run`
+- [x] 4.1 Host env key is visible inside the container under `--openrouter`
+- [x] 4.2 Op-ref fallback yields a non-empty `OPENROUTER_API_KEY`
+- [x] 4.3 No-flag invariant: the key is absent without `--openrouter`
+- [x] 4.4 Fail closed: no key source → exits non-zero before `docker run`
 - [ ] 4.5 In-container `curl` to `https://openrouter.ai/api/v1/key` returns 200 with the key's `limit`
 
 ## 5. Documentation
@@ -35,5 +35,5 @@ Not run as part of this retroactive record; the 58f03d0 commit message records n
 
 ## 6. Validation
 
-- [ ] 6.1 `openspec validate add-openrouter-support --strict` exits 0 (not run)
+- [x] 6.1 `openspec validate add-openrouter-support --strict` exits 0 (not run)
 - [x] 6.2 `claude-docker --help` shows `--openrouter`

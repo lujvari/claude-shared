@@ -5,9 +5,7 @@
 Make the container feel like the user's host Claude Code: same statusline, skills, agents, commands, global preferences, and a container-specific `settings.docker.json` when the user provides one â€” without copying macOS-only configuration or host-filesystem hooks that would misfire inside the Linux container.
 
 The host config directory defaults to `~/.claude` but is configurable via `--claude-dir=PATH` or the `CLAUDE_DOCKER_CONFIG_DIR` env var. This supports users who maintain multiple Claude profiles (e.g. one for API key usage, one for a Claude Enterprise subscription), each with its own config directory, OAuth token, and conversation history.
-
 ## Requirements
-
 ### Requirement: Configurable host config directory
 
 `run.sh` SHALL read all host config items from a single base directory. The base directory defaults to `~/.claude` and MAY be overridden with `--claude-dir=PATH` (flag) or `CLAUDE_DOCKER_CONFIG_DIR` (env var). When both are provided, the flag takes precedence.
@@ -16,7 +14,7 @@ The host config directory defaults to `~/.claude` but is configurable via `--cla
 
 - **GIVEN** `~/.claude-anthropic/` contains a `commands/` directory with custom slash commands
 - **WHEN** user runs `claude-docker --claude-dir=~/.claude-anthropic ~/repo`
-- **THEN** `/root/.claude/commands/` in the container contains the commands from `~/.claude-anthropic/commands/`
+- **THEN** `/home/claude/.claude/commands/` in the container contains the commands from `~/.claude-anthropic/commands/`
 
 #### Scenario: Env var sets the config dir
 
@@ -26,7 +24,7 @@ The host config directory defaults to `~/.claude` but is configurable via `--cla
 
 ### Requirement: Bind-mount host Claude config items
 
-`run.sh` SHALL dereference and bind-mount the following host items (when present) read-only into the container at the equivalent `/root/.claude/` path: `agents/`, `skills/`, `commands/`, `CLAUDE.md`, `statusline-command.sh`. Symlinks MUST be resolved at two levels:
+`run.sh` SHALL dereference and bind-mount the following host items (when present) read-only into the container at the equivalent `/home/claude/.claude/` path: `agents/`, `skills/`, `commands/`, `CLAUDE.md`, `statusline-command.sh`. Symlinks MUST be resolved at two levels:
 
 1. **Top-level directory symlink**: if `$CLAUDE_CONFIG_DIR/commands` is itself a symlink, `run.sh` SHALL resolve it to its real path before staging, so the copy source is always a real directory.
 2. **Internal symlinks**: `run.sh` SHALL use `cp -RL` to dereference all symlinks within the directory tree during staging, so targets outside the mount root still resolve inside the container.
@@ -39,13 +37,13 @@ Host `hooks/` and the `hooks` settings key are intentionally NOT carried over â€
 
 - **GIVEN** `~/.claude/skills/create-team` is a symlink to `~/git-work/lujvari/claude-shared/skills/create-team`
 - **WHEN** user runs `claude-docker`
-- **THEN** `/root/.claude/skills/create-team/` in the container contains the skill files (not a dangling symlink)
+- **THEN** `/home/claude/.claude/skills/create-team/` in the container contains the skill files (not a dangling symlink)
 
 #### Scenario: Top-level directory symlink resolves in container
 
 - **GIVEN** `~/.claude-anthropic/commands` is a symlink to `~/claude-config/commands`
 - **WHEN** user runs `claude-docker --claude-dir=~/.claude-anthropic ~/repo`
-- **THEN** `/root/.claude/commands/` in the container contains the files from `~/claude-config/commands/`
+- **THEN** `/home/claude/.claude/commands/` in the container contains the files from `~/claude-config/commands/`
 
 #### Scenario: Statusline renders in container
 
@@ -55,13 +53,13 @@ Host `hooks/` and the `hooks` settings key are intentionally NOT carried over â€
 
 ### Requirement: Container-specific settings file
 
-When `$CLAUDE_CONFIG_DIR/settings.docker.json` exists, `run.sh` SHALL bind-mount it read-only as a *seed* at `/root/.claude/settings.docker.json`, and the entrypoint SHALL copy it onto a writable `/root/.claude/settings.json` on every container start. The host seed remains read-only; the writable copy lives in the per-container layer so in-session settings writes (notably `/effort`) succeed instead of failing with `EBUSY`, while the on-start default always tracks the seed and live changes reset to it on the next start. When absent, no host-derived settings file is mounted and Claude uses its built-in defaults. The regular `settings.json` is never forwarded automatically â€” users maintain `settings.docker.json` explicitly to prevent silent drift between host and container behaviour.
+When `$CLAUDE_CONFIG_DIR/settings.docker.json` exists, `run.sh` SHALL bind-mount it read-only as a *seed* at `/home/claude/.claude/settings.docker.json`, and the entrypoint SHALL copy it onto a writable `/home/claude/.claude/settings.json` on every container start. The host seed remains read-only; the writable copy lives in the per-container layer so in-session settings writes (notably `/effort`) succeed instead of failing with `EBUSY`, while the on-start default always tracks the seed and live changes reset to it on the next start. When absent, no host-derived settings file is mounted and Claude uses its built-in defaults. The regular `settings.json` is never forwarded automatically â€” users maintain `settings.docker.json` explicitly to prevent silent drift between host and container behaviour.
 
 #### Scenario: Container uses dedicated settings file
 
 - **GIVEN** `~/.claude/settings.docker.json` contains `{"effortLevel": "high"}`
 - **WHEN** user runs `claude-docker`
-- **THEN** `/root/.claude/settings.json` in the container starts as a writable copy of that file
+- **THEN** `/home/claude/.claude/settings.json` in the container starts as a writable copy of that file
 
 #### Scenario: In-session settings write persists for the session
 
@@ -73,7 +71,7 @@ When `$CLAUDE_CONFIG_DIR/settings.docker.json` exists, `run.sh` SHALL bind-mount
 
 - **GIVEN** `~/.claude-anthropic/settings.docker.json` exists
 - **WHEN** user runs `claude-docker --claude-dir=~/.claude-anthropic ~/repo`
-- **THEN** `/root/.claude/settings.json` in the container starts as a writable copy of `~/.claude-anthropic/settings.docker.json`
+- **THEN** `/home/claude/.claude/settings.json` in the container starts as a writable copy of `~/.claude-anthropic/settings.docker.json`
 
 #### Scenario: No settings file
 
@@ -89,3 +87,32 @@ The image SHALL set `IS_SANDBOX=1` so `claude --dangerously-skip-permissions` (a
 
 - **WHEN** user runs `claude-docker --yolo`
 - **THEN** `claude --dangerously-skip-permissions` launches without the root refusal error
+
+### Requirement: Example seed allows reading the box's own config
+
+`examples/settings.docker.json` SHALL allow, without a prompt, reading the box's installed skills (`~/.claude/skills`), inat user rules (`~/.inat/rules`) and user `CLAUDE.md`, with the Read tool and with read-only Bash commands. It SHALL add no other allow rule, and every existing deny rule SHALL still block, including for a path under an allowed directory.
+
+#### Scenario: Reading an installed skill
+
+- **GIVEN** a box started with the example seed, in default permission mode
+- **WHEN** the session runs `head -2 ~/.claude/skills/agent-bus/SKILL.md`
+- **THEN** it runs without a permission prompt
+
+#### Scenario: Reading the user rules
+
+- **GIVEN** the same box
+- **WHEN** the session reads `~/.claude/CLAUDE.md` with the Read tool
+- **THEN** it reads without a permission prompt
+
+#### Scenario: A deny rule under an allowed path still blocks
+
+- **GIVEN** the same box
+- **WHEN** the session reads `~/.claude/skills/agent-bus/.env` with the Read tool
+- **THEN** the read is denied
+
+#### Scenario: Other commands still prompt
+
+- **GIVEN** the same box
+- **WHEN** the session runs `python3 -c "print(1)"`
+- **THEN** Claude Code asks for permission first
+

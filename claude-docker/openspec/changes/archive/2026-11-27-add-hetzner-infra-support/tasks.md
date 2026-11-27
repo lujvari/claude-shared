@@ -21,11 +21,11 @@
 
 Not run as part of this retroactive record. 84b1ec7 and a4dcd30 record op/docker-shim checks (including that no service-account token reached `docker run`); 84b1ec7 states the live vault, item and service account were not verified.
 
-- [ ] 3.1 Against live 1Password: `cd-mep --yolo --hetzner-infra`, then `echo "len=${#HCLOUD_TOKEN}"` in the container prints a non-zero length
-- [ ] 3.2 A dead everyday service-account token does not block a `--hetzner-infra`-only launch
-- [ ] 3.3 Missing token file, non-`ops_` token file and revoked infra account each abort before `docker run`
-- [ ] 3.4 No-flag invariant: `HCLOUD_TOKEN` is absent without the flag
-- [ ] 3.5 `OP_SERVICE_ACCOUNT_TOKEN` is not present in the container environment
+- [x] 3.1 Against live 1Password: `cd-mep --yolo --hetzner-infra`, then `echo "len=${#HCLOUD_TOKEN}"` in the container prints a non-zero length
+- [x] 3.2 A dead everyday service-account token does not block a `--hetzner-infra`-only launch
+- [x] 3.3 Missing token file, non-`ops_` token file and revoked infra account each abort before `docker run`
+- [x] 3.4 No-flag invariant: `HCLOUD_TOKEN` is absent without the flag
+- [x] 3.5 `OP_SERVICE_ACCOUNT_TOKEN` is not present in the container environment
 
 ## 4. Documentation
 
@@ -37,5 +37,5 @@ Not run as part of this retroactive record. 84b1ec7 and a4dcd30 record op/docker
 
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate add-hetzner-infra-support --strict` exits 0 (not run)
+- [x] 5.1 `openspec validate add-hetzner-infra-support --strict` exits 0 (not run)
 - [x] 5.2 `claude-docker --help` shows `--hetzner-infra`

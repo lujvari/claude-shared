@@ -15,10 +15,10 @@
 
 ## 4. Host (control session, owner's OK)
 
-- [ ] 4.1 Merge the three rules into the host's `~/.claude/settings.docker.json` `permissions.allow`, keeping its existing entries.
+- [x] 4.1 Merge the three rules into the host's `~/.claude/settings.docker.json` `permissions.allow`, keeping its existing entries.
 
 ## 5. Validation and hand-off
 
 - [x] 5.1 `openspec validate add-readonly-allow-rules --strict` exits 0.
 - [x] 5.2 Commit to `main` and push.
-- [ ] 5.3 Post 4.1 to the host as a reply on `20261120T085701Z-d9ee4a`.
+- [x] 5.3 Post 4.1 to the host as a reply on `20261120T085701Z-d9ee4a`.

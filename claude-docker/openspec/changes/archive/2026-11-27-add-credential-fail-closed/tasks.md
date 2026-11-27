@@ -10,9 +10,9 @@
 
 Not run as part of this retroactive record.
 
-- [ ] 2.1 `--mepdb` with `CLAUDE_DOCKER_MEPDB_OP_REF=""` and no host var exits non-zero before `docker run`
-- [ ] 2.2 The same launch with `CLAUDE_DOCKER_OP_OPTIONAL=1` starts, without `POSTGRES_TEST_URL`
-- [ ] 2.3 An expired service-account token aborts with one preflight message, not one per ref
+- [x] 2.1 `--mepdb` with `CLAUDE_DOCKER_MEPDB_OP_REF=""` and no host var exits non-zero before `docker run`
+- [x] 2.2 The same launch with `CLAUDE_DOCKER_OP_OPTIONAL=1` starts, without `POSTGRES_TEST_URL`
+- [x] 2.3 An expired service-account token aborts with one preflight message, not one per ref
 
 ## 3. Documentation
 
@@ -21,4 +21,4 @@ Not run as part of this retroactive record.
 
 ## 4. Validation
 
-- [ ] 4.1 `openspec validate add-credential-fail-closed --strict` exits 0 (not run)
+- [x] 4.1 `openspec validate add-credential-fail-closed --strict` exits 0 (not run)

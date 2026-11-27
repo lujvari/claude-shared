@@ -2,11 +2,7 @@
 
 ### Requirement: family-board MCP entry seeded with placeholders
 
-When `BRAIN_CF_ACCESS_CLIENT_ID` and `BRAIN_CF_ACCESS_CLIENT_SECRET` are both
-non-empty, `entrypoint.sh` SHALL make sure a user-scope HTTP MCP entry named
-`family-board` exists for `https://family.karansjet.dev/mcp`, with the same
-literal placeholder headers as the `brain` entry. The entrypoint SHALL NOT
-remove or rewrite an existing entry, and a failure to add it SHALL only warn.
+When `BRAIN_CF_ACCESS_CLIENT_ID` and `BRAIN_CF_ACCESS_CLIENT_SECRET` are both non-empty, `entrypoint.sh` SHALL make sure a user-scope HTTP MCP entry named `family-board` exists for `https://family.karansjet.dev/mcp`, with the same literal placeholder headers as the `brain` entry. The entrypoint SHALL NOT remove or rewrite an existing entry, and a failure to add it SHALL only warn.
 
 #### Scenario: Fresh box with --brain
 - GIVEN `~/.claude.json` has no `family-board` entry

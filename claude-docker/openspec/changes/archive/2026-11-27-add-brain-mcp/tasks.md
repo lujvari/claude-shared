@@ -43,7 +43,7 @@
       empty result is fine.
 - [x] 4.3 `curl -s -o /dev/null -w '%{http_code}' https://brain.karansjet.dev/mcp`
       returns 403
-- [ ] 4.4 Fail closed: `CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF=op://claude-docker/nope/x`
+- [x] 4.4 Fail closed: `CLAUDE_DOCKER_BRAIN_CF_ID_OP_REF=op://claude-docker/nope/x`
       with `--brain` exits non-zero before `docker run`
 - [x] 4.5 Post to the host: the op-ref item and fields, the env var names, and
       which launch shows Brain. No values.

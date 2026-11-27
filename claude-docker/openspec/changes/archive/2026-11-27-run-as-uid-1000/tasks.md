@@ -32,4 +32,4 @@
 
 ## 6. On archive
 
-- [ ] 6.1 Replace `/root` with `/home/claude` in `specs/external-cli-tools`, `host-config-parity`, `persistent-session-storage`
+- [x] 6.1 Replace `/root` with `/home/claude` in `specs/external-cli-tools`, `host-config-parity`, `persistent-session-storage`

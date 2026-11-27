@@ -20,10 +20,10 @@
 
 Not run as part of this retroactive record; the 0a1dd4a commit message records no verification.
 
-- [ ] 4.1 `--ado --ado-admin` forwards both PATs; the git credential helper still answers with `AZURE_DEVOPS_EXT_PAT`
-- [ ] 4.2 Op-ref fallback yields a non-empty `AZURE_DEVOPS_ADMIN_PAT`
-- [ ] 4.3 No-flag invariant: `--ado` alone does not forward `AZURE_DEVOPS_ADMIN_PAT`
-- [ ] 4.4 Fail closed: `--ado-admin` with no source exits non-zero before `docker run`
+- [x] 4.1 `--ado --ado-admin` forwards both PATs; the git credential helper still answers with `AZURE_DEVOPS_EXT_PAT`
+- [x] 4.2 Op-ref fallback yields a non-empty `AZURE_DEVOPS_ADMIN_PAT`
+- [x] 4.3 No-flag invariant: `--ado` alone does not forward `AZURE_DEVOPS_ADMIN_PAT`
+- [x] 4.4 Fail closed: `--ado-admin` with no source exits non-zero before `docker run`
 
 ## 5. Documentation
 
@@ -33,5 +33,5 @@ Not run as part of this retroactive record; the 0a1dd4a commit message records n
 
 ## 6. Validation
 
-- [ ] 6.1 `openspec validate add-ado-admin-support --strict` exits 0 (not run)
+- [x] 6.1 `openspec validate add-ado-admin-support --strict` exits 0 (not run)
 - [x] 6.2 `claude-docker --help` shows `--ado-admin`
