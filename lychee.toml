@@ -9,5 +9,4 @@ include = [
 exclude_path = [
     ".git",
     "node_modules",
-    "openspec/changes/archive",
 ]

@@ -2,7 +2,7 @@
 # Bump with: docker buildx imagetools inspect ubuntu:26.04 --format '{{.Manifest.Digest}}'
 # Ubuntu (not Debian): only ubuntu:26.04 ships git ≥ 2.48 in its main archive,
 # needed for the `extensions.relativeWorktrees` repo extension. Rationale and
-# alternatives in openspec/changes/worktree-relative-paths/design.md.
+# alternatives: the relative-worktree layout needs that git version.
 FROM ubuntu:26.04@sha256:5e275723f82c67e387ba9e3c24baa0abdcb268917f276a0561c97bef9450d0b4
 
 # pipefail propagates failures in RUN ... | ... — without this, a failed curl
@@ -76,8 +76,8 @@ ARG DOTNET_SDK_8_SHA512_AARCH64=84a4d017d74d7aa842e981679d1b044e6be1f35b9b2b2140
 ARG DOTNET_SDK_9_VERSION=9.0.318
 ARG DOTNET_SDK_9_SHA512_X86_64=e8685293a3512178e0de1bb3c1663e31fdf9d761af705094bf833cc1ff6b9a18c543aa4141f0216503c98039c719585a6d32905b0bbb3279e93b7e7616e047c3
 ARG DOTNET_SDK_9_SHA512_AARCH64=f9c957867bddea8f82ec0459432ce7ddff8fafc846537b8003eb9f239d9c2e38586031a15954e74691c5a8cf5b3ab125d99bca85c74ca45dc8745071ca81e7ff
-# Go toolchain, a base-image exception like Flutter and .NET (openspec change
-# add-go-toolchain): Go projects' pre-commit hooks run go vet / staticcheck /
+# Go toolchain, a base-image exception like Flutter and .NET (see
+# specs/CURRENT.md): Go projects' pre-commit hooks run go vet / staticcheck /
 # go test from Claude's Bash tool. Bump + get the hashes with:
 #   curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0] | .version, (.files[]|select(.os=="linux" and .kind=="archive" and (.arch=="amd64" or .arch=="arm64"))|"\(.arch) \(.sha256)")'
 ARG GO_VERSION=1.27.3
@@ -219,7 +219,7 @@ RUN npm install -g --ignore-scripts \
 # inside the tfenv tree. Same for tofuenv, Flutter and the Android SDK below.
 # Placed after the heavier npm install so a tfenv version bump doesn't
 # invalidate that layer's cache (tfenv pins move far less often than the
-# claude-code/openspec/pnpm pins above).
+# claude-code, openspec and pnpm pins above).
 RUN curl -fsSL "https://github.com/tfutils/tfenv/archive/refs/tags/v${TFENV_VERSION}.tar.gz" \
       -o /tmp/tfenv.tar.gz \
  && echo "${TFENV_SHA256}  /tmp/tfenv.tar.gz" | sha256sum -c - \
@@ -529,7 +529,7 @@ EOF
 # /tmp/claude-docker-gitconfig and the entrypoint writes that file instead
 # (container writable layer, discarded on `docker run --rm` exit) — never the
 # named volume's $HOME. A missing include file is silently skipped by git.
-# See openspec/changes/use-git-credential-helper/.
+# See specs/CURRENT.md.
 # Placed after the tmux conf so edits here don't invalidate heavier
 # upstream layers (apt/npm/glab/aws/uv/tfenv).
 COPY entrypoint.sh /usr/local/bin/claude-docker-entrypoint

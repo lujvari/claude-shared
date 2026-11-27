@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Named GitHub profiles, sourced by run.sh (openspec: add-github-profiles).
+# Named GitHub profiles, sourced by run.sh.
 #
 # --gh defaults to the owner's own token, and every source it has (the
 # env-file op-ref, a GH_TOKEN/GITHUB_TOKEN in the shell or the env file, a gh

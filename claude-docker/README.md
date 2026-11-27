@@ -458,7 +458,7 @@ A single failed read is usually a transient `op read` timeout: re-run, or raise 
 
 #### A rejected token warns at launch
 
-A token that is present but expired or revoked passes the check above. So after it, `run.sh` makes one identity request per credential flag (`api.github.com/user`, GitLab `api/v4/user`, ADO `connectionData`, Jira `myself`, and so on; the full table is in `openspec/changes/add-token-probe/design.md`). A rejected token prints `claude-docker: --<flag> token rejected (HTTP 401) - rotate it on the host before relying on this box` and the launch continues. Claude Code repaints the terminal a moment later, so the rejected flags also go into the container as `CLAUDE_DOCKER_REJECTED_TOKENS`, and the statusline shows a red `token-dead:<flags>` tag after the `docker:` one for the whole session. A network error, timeout, 5xx or a 403 prints nothing; 403 only counts for Cloudflare, which uses it for bad tokens. The requests run in parallel and give up after 2 s, and each token reaches `curl` on stdin, never in argv. `CLAUDE_DOCKER_NO_TOKEN_PROBE=1` turns the check off.
+A token that is present but expired or revoked passes the check above. So after it, `run.sh` makes one identity request per credential flag (`api.github.com/user`, GitLab `api/v4/user`, ADO `connectionData`, Jira `myself`, and so on). A rejected token prints `claude-docker: --<flag> token rejected (HTTP 401) - rotate it on the host before relying on this box` and the launch continues. Claude Code repaints the terminal a moment later, so the rejected flags also go into the container as `CLAUDE_DOCKER_REJECTED_TOKENS`, and the statusline shows a red `token-dead:<flags>` tag after the `docker:` one for the whole session. A network error, timeout, 5xx or a 403 prints nothing; 403 only counts for Cloudflare, which uses it for bad tokens. The requests run in parallel and give up after 2 s, and each token reaches `curl` on stdin, never in argv. `CLAUDE_DOCKER_NO_TOKEN_PROBE=1` turns the check off.
 
 Not checked: `--aws`, `--tofu`, `--mepdb`, `--braindb`, `--brain`, `--rr-e2e`, `--tfe` when its token is only in the mounted credentials file, and `--ado`/`--ado-admin` without `CLAUDE_DOCKER_ADO_ORG`. ADO has no org-less endpoint that accepts an org-scoped PAT.
 
@@ -553,7 +553,7 @@ tofu init                    # private GitLab module sources Just Work
 git clone https://sbp.gitlab.schubergphilis.com/<group>/<repo>.git
 ```
 
-**No token in git output.** Because there is no `url.<host>.insteadOf` rewrite, every URL-printing git command (`git remote -v`, `git fetch -v`, `git ls-remote`, `git remote prune`, clone/push progress) shows the **bare** `https://<host>/...` URL. The token never appears in git output, so it can't leak into a log, shell history, or AI-agent transcript that captures that output. (The earlier `insteadOf` approach embedded `oauth2:$TOKEN@host` in the URL, which git echoed into all of those — see `openspec/changes/use-git-credential-helper/`.)
+**No token in git output.** Because there is no `url.<host>.insteadOf` rewrite, every URL-printing git command (`git remote -v`, `git fetch -v`, `git ls-remote`, `git remote prune`, clone/push progress) shows the **bare** `https://<host>/...` URL. The token never appears in git output, so it can't leak into a log, shell history, or AI-agent transcript that captures that output. (The earlier `insteadOf` approach embedded `oauth2:$TOKEN@host` in the URL, which git echoed into all of those.)
 
 **Ephemerality.** The helper config is written to `/tmp/claude-docker-gitconfig`, which `/etc/gitconfig` includes (the box user can't write `/etc/gitconfig` itself). It lives in the container's writable layer and is discarded on `docker run --rm` exit. The config holds only a *reference* to the env var (`$GITLAB_TOKEN`), not its value, so the token isn't written to disk at all — and nothing persists across container exits via the `claude-code-root` named volume (which only mounts `/home/claude/`, not `/tmp/`). A `git config --system --list` shows the `$GITLAB_TOKEN` text in the helper, not the secret.
 
@@ -735,4 +735,4 @@ It is a guard against carelessness, not a control: `python -c`, `git show` and s
 
 ## Specs
 
-Behavioural requirements live in [`openspec/specs/`](openspec/specs/); change history in [`openspec/changes/archive/`](openspec/changes/archive/).
+Current behaviour is in [`../specs/CURRENT.md`](../specs/CURRENT.md); numbered specs live in [`../specs/`](../specs/) and plans in [`../plans/`](../plans/).

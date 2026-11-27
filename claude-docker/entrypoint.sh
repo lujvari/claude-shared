@@ -3,8 +3,7 @@
 # against the same private HTTPS hosts the matching CLI tool (`gh` / `glab`
 # / `az devops`) was opted in for, so clones and tool-spawned git fetches
 # (tofu/terraform init, go get) Just Work. See
-# openspec/changes/use-git-credential-helper/ (supersedes the original
-# insteadOf approach in add-git-insteadof/).
+# specs/CURRENT.md (replaces the original insteadOf rewrite).
 #
 # Mechanism: a per-host git credential helper (--system) that reads the
 # token from the forwarded env var AT AUTH TIME. We deliberately do NOT

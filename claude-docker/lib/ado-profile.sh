@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Named Azure DevOps profiles, sourced by run.sh (openspec: add-ado-profiles).
+# Named Azure DevOps profiles, sourced by run.sh.
 #
 # --ado was built for one org. A second one (a customer org next to the SBP
 # one) needs its own PAT, and an SBP PAT must never reach that box. Every

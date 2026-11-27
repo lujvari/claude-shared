@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Launch-time token probe, sourced by run.sh (openspec: add-token-probe).
+# Launch-time token probe, sourced by run.sh.
 #
 # The fail-closed gate stops a launch whose credential flag injected nothing.
 # It can't see a token that is present but dead, and three of the first ten
