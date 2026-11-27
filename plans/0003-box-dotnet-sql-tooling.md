@@ -2,7 +2,7 @@
 
 **Spec:** specs/0003-box-dotnet-sql-tooling.md
 **Effort:** medium
-**Status:** approved
+**Status:** done
 
 ## Approach
 
@@ -26,8 +26,8 @@ go-sqlcmd (GitHub releases), sqlpackage (nuget.org), playwright and its dependen
 
 ## Acceptance Checklist
 
-- [ ] REQ-1, REQ-2, REQ-3: in this box, before the host build: the pinned sqlcmd tarball, the sqlpackage nupkg and the requirements file pass their hash checks. `sqlcmd --version` prints v1.11.0. sqlpackage, installed from the local source only, prints 170.6.60 and asks for runtime 8.0.34. A Python script with `PLAYWRIGHT_BROWSERS_PATH` set to an empty dir launches `$CHROME_EXECUTABLE` headless and reads the title of a `data:` page.
-- [ ] REQ-4: in a scratch repo, `dotnet build` of a new classlib in a `git worktree add --relative-paths` worktree fails with `Unsupported repository extension 'relativeworktrees'` without the property, and succeeds with it.
-- [ ] REQ-1, REQ-2, REQ-3, REQ-4: after the host rebuild, in a fresh box: `sqlcmd --version`, `sqlpackage /version`, the Python script above and the REQ-4 build pass with no extra env.
-- [ ] REQ-1, REQ-2: on the host, a throwaway `mcr.microsoft.com/mssql/server:2022-latest` runs on a Docker network, and a box launched on that network with `CLAUDE_DOCKER_NETWORK=<net>` does three things: runs `SELECT 1` through `sqlcmd`, `sqlpackage /Action:Extract`s a one-table database to a dacpac, and `/Action:Publish`es it to a new database that then has the table.
-- [ ] Tests pass: `python3 -m unittest discover -s claude-docker/lib -p 'test_*.py'` and `python3 -m unittest discover -s claude-docker/hooks -p 'test_*.py'`.
+- [x] REQ-1, REQ-2, REQ-3: in this box, before the host build: the pinned sqlcmd tarball, the sqlpackage nupkg and the requirements file pass their hash checks. `sqlcmd --version` prints v1.11.0. sqlpackage, installed from the local source only, prints 170.6.60 and asks for runtime 8.0.34. A Python script with `PLAYWRIGHT_BROWSERS_PATH` set to an empty dir launches `$CHROME_EXECUTABLE` headless and reads the title of a `data:` page. — verified: in this box before the build: hashes matched, sqlcmd v1.11.0, sqlpackage 170.6.60 from the local source only (runtimeconfig asks 8.0.34), Playwright drove Chrome 151.0.7922.77 with an empty `PLAYWRIGHT_BROWSERS_PATH`.
+- [x] REQ-4: in a scratch repo, `dotnet build` of a new classlib in a `git worktree add --relative-paths` worktree fails with `Unsupported repository extension 'relativeworktrees'` without the property, and succeeds with it. — verified: in this box, a `--relative-paths` worktree build failed with the extension error without the property and succeeded with it.
+- [x] REQ-1, REQ-2, REQ-3, REQ-4: after the host rebuild, in a fresh box: `sqlcmd --version`, `sqlpackage /version`, the Python script above and the REQ-4 build pass with no extra env. — verified: on WSL after the rebuild, a fresh `claude-code:local` container (uid 1000, empty home) printed sqlcmd v1.11.0, sqlpackage 170.6.60.2, `playwright ok 151.0.7922.77` with no Playwright browsers, and `Build succeeded` in a relative-path worktree, with no extra env.
+- [x] REQ-1, REQ-2: on the host, a throwaway `mcr.microsoft.com/mssql/server:2022-latest` runs on a Docker network, and a box launched on that network with `CLAUDE_DOCKER_NETWORK=<net>` does three things: runs `SELECT 1` through `sqlcmd`, `sqlpackage /Action:Extract`s a one-table database to a dacpac, and `/Action:Publish`es it to a new database that then has the table. — verified: same WSL run, a throwaway SQL Server 2022 on network `c0003`: `sqlcmd` query, `sqlpackage` Extract of database `src` and Publish to `dst`, then `sys.tables` in `dst` listed `t`; `ALL-PASS`.
+- [x] Tests pass: `python3 -m unittest discover -s claude-docker/lib -p 'test_*.py'` and `python3 -m unittest discover -s claude-docker/hooks -p 'test_*.py'`. — verified: both unittest discover runs print OK.
