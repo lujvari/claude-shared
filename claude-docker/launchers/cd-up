@@ -73,11 +73,17 @@ window_of() {
 # physical pixels. Nothing for a desk not yet set.
 # work: two 2560x1440 screens side by side, primary on the left, taskbar
 # 48 px, so a quarter is 1280x1392.
+# home: two 1920x1080 screens, the secondary left of the primary (X -1920),
+# taskbar 48 px, so a quarter is 960x1032. Q1 stays on the primary, Q3/Q4 on
+# the secondary, as at work.
 rect_of() {
   case "$1/$2" in
     work/q1) echo "0 0 1280 1392" ;;
     work/q3) echo "2560 0 1280 1392" ;;
     work/q4) echo "3840 0 1280 1392" ;;
+    home/q1) echo "0 0 960 1032" ;;
+    home/q3) echo "-1920 0 960 1032" ;;
+    home/q4) echo "-960 0 960 1032" ;;
   esac
 }
 
