@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# claude-docker launcher: work on the host stage broker (spec 0002), apart
+# from the claude-docker fixes that queue in cd-tools. The broker still runs
+# in WSL (`stage_broker.py watch`); a box has no Docker, so this box changes
+# broker code and stack definitions, it does not run them.
+#
+# tools/claude-shared rides along for spec/plan 0002 and OPEN.md: the same
+# checkout as cd-tools, so commit by path. No --tools, so claude-docker/ is
+# read-only here; lib/stage.sh and run.sh --stage changes go to cd-tools.
+# Refuses --stage (spec 0008). `cd-stage +sbp/ct` adds a project tree.
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/_lib.sh"
+for a in "$@"; do
+  case "$a" in
+    --) break ;;
+    --stage|--stage=*)
+      echo "cd-stage: --stage refused: a box that can edit the broker must not run a stack through it." >&2
+      echo "cd-stage: test the stack from its project's box, e.g. cd-mep --stage myentrypoint." >&2
+      exit 1 ;;
+  esac
+done
+cd_workspace "tools/stage-broker";  broker=$ws
+cd_workspace "tools/claude-shared"; shared=$ws
+exec "$CD_RUN" --claude-auth --gh "$broker" "$shared" "$@"

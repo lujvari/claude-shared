@@ -129,5 +129,12 @@ Pure kit work (skills, rules) goes to `cd-kits`; `cd-tools` keeps kits
 mounted for work that spans both repos (agent-bus, hooks). Commit by path,
 never `git add -A`.
 
+`cd-stage` takes stage-broker work (`tools/stage-broker`, spec 0002) and
+mounts the `tools/claude-shared` checkout that `cd-tools` uses, without
+`--tools`: `claude-docker/` stays read-only there, so `lib/stage.sh` and
+`run.sh --stage` changes stay in `cd-tools`. Commit by path, never
+`git add -A`. It refuses `--stage`: a box that can edit the broker must not
+run a stack through it. Not in the `cd-up` fleet.
+
 The dev root is derived in `_lib.sh` from the checkout's own location, four
 levels above this directory — nothing to configure when the clone moves.

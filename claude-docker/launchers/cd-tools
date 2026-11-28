@@ -12,6 +12,10 @@
 # work that spans both repos. Both boxes share the one kits checkout, so
 # commit by path, never `git add -A`.
 #
+# Stage-broker work (tools/stage-broker, spec 0002) routes to cd-stage, which
+# mounts this same claude-shared checkout read-only for claude-docker/:
+# lib/stage.sh and run.sh --stage changes stay here. Commit by path.
+#
 # Still host-only, by design: installing what is built here. Copying a skill
 # into ~/.claude/skills, linking a launcher into ~/bin and editing
 # ~/.claude/CLAUDE.md or settings.json — boxes see those read-only, so a box
