@@ -55,8 +55,8 @@ running)`, named boxes too; run `cd-cis` itself for a second session), checks
 tab per box ~3 s apart so the boxes' `op read`s don't time out together. A tab
 whose box fails stays open at a shell: retry with the up-arrow.
 
-The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr, kits),
-`cd-q3` (tools, dev, mep) and `cd-q4` (brain, cis, ct, inat). An open one
+The tabs land in three windows, one per screen quarter: `cd-q1` (apg, asr),
+`cd-q3` (tools, dev, mep, kits) and `cd-q4` (brain, cis, ct, inat). An open one
 just gets the tab. Plain `cd-up` leaves placing new windows to Windows.
 `--work` or `--home` snaps each window the run creates to exactly that desk's
 rectangle for its quarter, through the Windows API (`_snap.ps1`, run in
